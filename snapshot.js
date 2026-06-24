@@ -3,10 +3,18 @@ const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssoc
 const bs58 = require('bs58');
 require('dotenv').config();
 
-const RPC_URL = process.env.RPC_URL;
-const PAYER_KEY = process.env.PAYER_SECRET_KEY;
-const TOKEN_MINT_STR = process.env.TOKEN_MINT || '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
+const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
+let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
+let TOKEN_MINT_STR = process.env.TOKEN_MINT ? process.env.TOKEN_MINT.trim() : '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const IS_TEST = process.env.IS_TEST === 'true';
+
+if (TOKEN_MINT_STR.startsWith('"') || TOKEN_MINT_STR.startsWith("'")) TOKEN_MINT_STR = TOKEN_MINT_STR.slice(1);
+if (TOKEN_MINT_STR.endsWith('"') || TOKEN_MINT_STR.endsWith("'")) TOKEN_MINT_STR = TOKEN_MINT_STR.slice(0, -1);
+TOKEN_MINT_STR = TOKEN_MINT_STR.trim();
+
+if (PAYER_KEY && (PAYER_KEY.startsWith('"') || PAYER_KEY.startsWith("'"))) PAYER_KEY = PAYER_KEY.slice(1);
+if (PAYER_KEY && (PAYER_KEY.endsWith('"') || PAYER_KEY.endsWith("'"))) PAYER_KEY = PAYER_KEY.slice(0, -1);
+if (PAYER_KEY) PAYER_KEY = PAYER_KEY.trim();
 
 if (!RPC_URL || !PAYER_KEY) {
   console.error("[ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -133,3 +141,4 @@ async function run() {
 }
 
 run();
+
