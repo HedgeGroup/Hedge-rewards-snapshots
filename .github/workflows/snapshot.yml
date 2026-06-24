@@ -28,9 +28,11 @@ jobs:
       - name: Variables
         run: |
           echo "RPC_URL=${{ secrets.SOLANA_RPC_URL }}" >> .env
-          echo "PAYER_KEY=${{ secrets.PAYER_PRIVATE_KEY }}" >> .env
-          echo "TOKEN_MINT=4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump" >> .env
+          echo "PAYER_SECRET_KEY=${{ secrets.PAYER_SECRET_KEY }}" >> .env
+          echo "TOKEN_MINT=${{ secrets.TOKEN_MINT_ADDRESS }}" >> .env
           echo "IS_TEST=${{ github.event.inputs.test_mode || 'false' }}" >> .env
 
       - name: Run Reward System
         run: node snapshot.js
+
+
