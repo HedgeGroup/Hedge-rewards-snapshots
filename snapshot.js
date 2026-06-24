@@ -9,8 +9,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Buffer.from('33a921d7b326bf5fbc67b36fdbce2324ca9574d640fae7f53a479893d59a72ad', 'hex'));
-const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from('06ddf6e1d765a193022223334d0aa8c338c3cf0c2d3851b4c6b5413340000000', 'hex'));
+const TOKEN_MINT = new PublicKey(Buffer.from([34,220,103,115,108,189,203,34,92,238,103,143,158,11,88,141,40,248,154,166,236,252,99,235,16,113,87,3,101,235,116,63]));
+const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from([6,221,246,225,215,101,161,147,2,222,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -155,3 +155,4 @@ async function run() {
 
 run();
 
+      
