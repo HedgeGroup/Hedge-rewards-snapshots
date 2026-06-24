@@ -4,12 +4,12 @@ const bs58 = require('bs58');
 require('dotenv').config();
 
 const RPC_URL = process.env.RPC_URL;
-const PAYER_KEY = process.env.PAYER_KEY;
+const PAYER_KEY = process.env.PAYER_SECRET_KEY;
 const TOKEN_MINT_STR = process.env.TOKEN_MINT || '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const IS_TEST = process.env.IS_TEST === 'true';
 
 if (!RPC_URL || !PAYER_KEY) {
-  console.error("[ERROR] Missing RPC_URL or PAYER_PRIVATE_KEY in GitHub Secrets!");
+  console.error("[ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
   process.exit(1);
 }
 
@@ -21,7 +21,7 @@ let secretKey;
 try {
   secretKey = PAYER_KEY.startsWith('[') ? Uint8Array.from(JSON.parse(PAYER_KEY)) : bs58.decode(PAYER_KEY);
 } catch (e) {
-  console.error("[ERROR] Invalid PAYER_PRIVATE_KEY format. Double check your copied secret.");
+  console.error("[ERROR] Invalid PAYER_SECRET_KEY format. Double check your copied secret.");
   process.exit(1);
 }
 const payer = Keypair.fromSecretKey(secretKey);
