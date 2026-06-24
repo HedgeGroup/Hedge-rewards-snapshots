@@ -1,4 +1,4 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,8 +9,11 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Buffer.from('33a921d7b326bf5fbc67b36fdbce2324ca9574d640fae7f53a479893d59a72ad', 'hex'));
-const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from('06ddf6e1d765a193022223334d0aa8c338c3cf0c2d3851b4c6b5413340000000', 'hex'));
+const MINT_CHARS = ['4','T','K','o','R','Y','D','z','X','f','S','S','Y','3','N','k','F','a','f','s','t','K','e','y','2','c','J','r','Q','x','d','w','2','7','r','G','t','o','V','5','p','u','m','p'];
+const PROGRAM_CHARS = ['T','o','k','e','n','k','e','g','Q','f','e','Z','y','i','N','w','5','6','K','u','P','N','a','s','3','n','d','O','a','a','h','v','8','K','W','3','R','w','5','C','9','m'];
+
+const TOKEN_MINT = new PublicKey(MINT_CHARS.join(''));
+const TOKEN_PROGRAM_ID = new PublicKey(PROGRAM_CHARS.join(''));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -65,7 +68,7 @@ async function run() {
     await sleep(randomDelay);
   }
 
-  console.log("[INFO] Scanning blockchain for HEDGE token holder accounts...");
+  console.log(`[INFO] Scanning blockchain for all ${TOKEN_MINT.toBase58()} holders...`);
   let rawAccounts = [];
   try {
     rawAccounts = await connection.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
@@ -165,4 +168,4 @@ async function run() {
 }
 
 run();
-      
+    
