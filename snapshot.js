@@ -2,28 +2,43 @@ const { Connection, PublicKey } = require('@solana/web3.js');
 const fs = require('fs');
 const csv = require('fast-csv');
 
-const RPC_ENDPOINT = 'https://mainnet-triton.one';
+const RPC_ENDPOINTS = [
+    'https://solana.com',
+    'https://mainnet-triton.one'
+];
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
 
-async function runSnapshot() {
-    const connection = new Connection(RPC_ENDPOINT, {
-        commitment: 'confirmed',
-        confirmTransactionInitialTimeout: 120000
-    });
-
-    const accounts = await connection.getParsedProgramAccounts(
-        new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
-        {
-            filters: [
-                { dataSize: 165 },
-                { memcmp: { offset: 0, bytes: TOKEN_MINT_ADDRESS } }
-            ]
+async function fetchAccounts() {
+    for (const url of RPC_ENDPOINTS) {
+        try {
+            const connection = new Connection(url, {
+                commitment: 'confirmed',
+                confirmTransactionInitialTimeout: 60000
+            });
+            const accounts = await connection.getParsedProgramAccounts(
+                new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+                {
+                    filters: [
+                        { dataSize: 165 },
+                        { memcmp: { offset: 0, bytes: TOKEN_MINT_ADDRESS } }
+                    ]
+                }
+            );
+            return accounts;
+        } catch (e) {
+            console.error(`RPC url ${url} failed, trying next...`);
         }
-    );
+    }
+    throw new Error('All RPC endpoints failed under pressure.');
+}
 
+async function runSnapshot() {
+    const accounts = await fetchAccounts();
     const snapshotData = [];
-    const dateStr = new Date().toISOString().split('T')[0];
+    
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
     for (const account of accounts) {
         try {
@@ -68,3 +83,4 @@ runSnapshot().catch(err => {
     console.error(err);
     process.exit(1);
 });
+
