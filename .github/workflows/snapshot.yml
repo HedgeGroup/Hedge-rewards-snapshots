@@ -1,0 +1,35 @@
+name: Saturday Automated Yield Snapshot
+
+on:
+  schedule:
+    - cron: '0 16 * * 6'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code Base
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Install Runtime Dependencies
+      run: npm install
+
+    - name: Run Snapshot and Anti-Frontrunning Logic
+      run: node snapshot.js
+
+    - name: Push CSV Logs Openly to Repository
+      run: |
+        git config --global user.name "Satoshi-Proof-Bot"
+        git config --global user.email "bot@github.internal"
+        git add snapshot_*.csv
+        git commit -m "Automated Weekly Yield Snapshot: $(date +'%Y-%m-%d')" || exit 0
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
