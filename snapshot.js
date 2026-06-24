@@ -7,8 +7,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+const TOKEN_MINT = new PublicKey(new Uint8Array([51, 150, 203, 114, 5, 235, 12, 107, 49, 140, 2, 90, 95, 246, 219, 210, 8, 207, 96, 240, 112, 219, 44, 21, 172, 85, 224, 210, 228, 9, 252, 155]));
+const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6, 221, 232, 242, 225, 208, 149, 18, 177, 190, 87, 194, 225, 126, 32, 236, 175, 48, 186, 30, 229, 61, 244, 119, 177, 242, 211, 48, 43, 163, 184, 137]));
 
 if (PAYER_KEY) {
   PAYER_KEY = PAYER_KEY.replace(/[\r\n]/g, '').trim();
@@ -18,7 +18,6 @@ if (PAYER_KEY) {
 }
 
 if (!RPC_URL || !PAYER_KEY) {
-  console.error("[ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
   process.exit(1);
 }
 
@@ -34,7 +33,6 @@ try {
     secretKey = bs58.decode(cleanedBase58);
   }
 } catch (e) {
-  console.error("[ERROR] Invalid PAYER_SECRET_KEY format. Verification failed.");
   process.exit(1);
 }
 const payer = Keypair.fromSecretKey(secretKey);
@@ -50,11 +48,9 @@ async function sleep(ms) {
 async function run() {
   if (!IS_TEST) {
     const randomDelay = Math.floor(Math.random() * 7200000);
-    console.log(`[INFO] Waiting for scheduled Saturday execution. Delaying for ${(randomDelay/1000/60).toFixed(2)} minutes.`);
     await sleep(randomDelay);
   }
 
-  console.log("[INFO] Scanning blockchain for all token holders...");
   let accounts;
   try {
     const parsedAccounts = await connection.getParsedProgramAccounts(
@@ -68,7 +64,6 @@ async function run() {
     );
     accounts = parsedAccounts;
   } catch (err) {
-    console.error("[ERROR] Free RPC node rate limit hit or request failed:", err.message);
     process.exit(1);
   }
 
@@ -85,10 +80,8 @@ async function run() {
       });
     }
   }
-  console.log(`[SUCCESS] Captured ${snapshot.length} total holder accounts.`);
 
   if (!IS_TEST) {
-    console.log("[INFO] Waiting until exactly 20:00 London time for payout...");
     while (getLondonHour() < 20) {
       await sleep(60000);
     }
@@ -98,11 +91,9 @@ async function run() {
   try {
     payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
   } catch (err) {
-    console.error("[ERROR] Your distribution wallet does not have a HEDGE token account setup.");
     process.exit(1);
   }
 
-  console.log("[INFO] Starting automatic payout distributions...");
   for (const holder of snapshot) {
     if (holder.reward === 0n) continue;
     try {
@@ -132,17 +123,15 @@ async function run() {
         )
       );
       
-      const sig = await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
-      console.log(`[PAYOUT SUCCESS] Sent reward to ${holder.owner.toBase58()}. Tx: ${sig}`);
+      await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
       await sleep(300);
     } catch (txErr) {
-      console.error(`[PAYOUT FAILED] Distribution failed for wallet ${holder.owner.toBase58()}:`, txErr.message);
       await sleep(300);
       continue;
     }
   }
-  console.log("[SUCCESS] All reward distributions finalized.");
   process.exit(0);
 }
 
 run();
+
