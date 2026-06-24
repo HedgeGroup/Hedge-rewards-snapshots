@@ -7,18 +7,24 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(new Uint8Array([51, 150, 203, 114, 5, 235, 12, 107, 49, 140, 2, 90, 95, 246, 219, 210, 8, 207, 96, 240, 112, 219, 44, 21, 172, 85, 224, 210, 228, 9, 252, 155]));
-const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6, 221, 232, 242, 225, 208, 149, 18, 177, 190, 87, 194, 225, 126, 32, 236, 175, 48, 186, 30, 229, 61, 244, 119, 177, 242, 211, 48, 43, 163, 184, 137]));
+const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+
+if (!RPC_URL) {
+  console.error("[CRITICAL ERROR] RPC_URL is empty inside your GitHub Secrets!");
+  process.exit(1);
+}
+
+if (!PAYER_KEY) {
+  console.error("[CRITICAL ERROR] PAYER_SECRET_KEY is empty inside your GitHub Secrets!");
+  process.exit(1);
+}
 
 if (PAYER_KEY) {
   PAYER_KEY = PAYER_KEY.replace(/[\r\n]/g, '').trim();
   if (PAYER_KEY.startsWith('"') || PAYER_KEY.startsWith("'")) PAYER_KEY = PAYER_KEY.slice(1);
   if (PAYER_KEY.endsWith('"') || PAYER_KEY.endsWith("'")) PAYER_KEY = PAYER_KEY.slice(0, -1);
   PAYER_KEY = PAYER_KEY.trim();
-}
-
-if (!RPC_URL || !PAYER_KEY) {
-  process.exit(1);
 }
 
 const connection = new Connection(RPC_URL, 'confirmed');
@@ -33,9 +39,17 @@ try {
     secretKey = bs58.decode(cleanedBase58);
   }
 } catch (e) {
+  console.error("[CRITICAL ERROR] Your PAYER_SECRET_KEY text inside GitHub Secrets is broken or missing characters!");
   process.exit(1);
 }
-const payer = Keypair.fromSecretKey(secretKey);
+
+let payer;
+try {
+  payer = Keypair.fromSecretKey(secretKey);
+} catch (e) {
+  console.error("[CRITICAL ERROR] Keypair generation failed. Your secret key is not a valid Solana wallet key!");
+  process.exit(1);
+}
 
 function getLondonHour() {
   return parseInt(new Date().toLocaleString("en-US", { timeZone: "Europe/London", hour: "2-digit", hour12: false }), 10);
@@ -51,6 +65,7 @@ async function run() {
     await sleep(randomDelay);
   }
 
+  console.log("[INFO] Connection established. Scanning for holders...");
   let accounts;
   try {
     const parsedAccounts = await connection.getParsedProgramAccounts(
@@ -64,6 +79,7 @@ async function run() {
     );
     accounts = parsedAccounts;
   } catch (err) {
+    console.error("[CRITICAL ERROR] Your RPC_URL connection failed or hit an aggressive rate limit:", err.message);
     process.exit(1);
   }
 
@@ -80,6 +96,7 @@ async function run() {
       });
     }
   }
+  console.log(`[SUCCESS] Found ${snapshot.length} active token holders.`);
 
   if (!IS_TEST) {
     while (getLondonHour() < 20) {
@@ -91,6 +108,7 @@ async function run() {
   try {
     payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
   } catch (err) {
+    console.error("[CRITICAL ERROR] Could not resolve associated token account for your payer wallet.");
     process.exit(1);
   }
 
@@ -123,15 +141,16 @@ async function run() {
         )
       );
       
-      await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
+      const txid = await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
+      console.log(`[PAYOUT] Success to ${holder.owner.toBase58()}. Tx: ${txid}`);
       await sleep(300);
     } catch (txErr) {
       await sleep(300);
       continue;
     }
   }
+  console.log("[SUCCESS] Process complete.");
   process.exit(0);
 }
 
 run();
-
