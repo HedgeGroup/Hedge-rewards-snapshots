@@ -1,5 +1,5 @@
 const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
-const { createTransferCheckedInstruction, getAssociatedTokenAddress } = require('@solana/spl-token');
+const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
 
@@ -48,10 +48,17 @@ async function run() {
   for (const acc of accounts) {
     const amount = BigInt(acc.amount);
     if (amount > 0n) {
-      snapshot.push({
-        address: acc.address.toString(),
-        reward: (amount * 3n) / 100n
-      });
+      try {
+        const accInfo = await connection.getParsedAccountInfo(new PublicKey(acc.address));
+        const ownerAddress = accInfo.value.data.parsed.info.owner;
+        snapshot.push({
+          owner: new PublicKey(ownerAddress),
+          reward: (amount * 3n) / 100n
+        });
+        await sleep(150);
+      } catch (e) {
+        continue;
+      }
     }
   }
 
@@ -71,21 +78,37 @@ async function run() {
   for (const holder of snapshot) {
     if (holder.reward === 0n) continue;
     try {
-      const holderPubkey = new PublicKey(holder.address);
-      const transaction = new Transaction().add(
+      const holderAta = await getAssociatedTokenAddress(TOKEN_MINT, holder.owner);
+      const transaction = new Transaction();
+      
+      try {
+        await connection.getAccountInfo(holderAta);
+      } catch (e) {
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            payer.publicKey,
+            holderAta,
+            holder.owner,
+            TOKEN_MINT
+          )
+        );
+      }
+
+      transaction.add(
         createTransferCheckedInstruction(
           payerAta,
           TOKEN_MINT,
-          holderPubkey,
+          holderAta,
           payer.publicKey,
           holder.reward,
           9
         )
       );
+      
       await connection.sendTransaction(transaction, [payer], { skipPreflight: false, commitment: 'confirmed' });
-      await sleep(200);
+      await sleep(250);
     } catch (txErr) {
-      await sleep(200);
+      await sleep(250);
       continue;
     }
   }
