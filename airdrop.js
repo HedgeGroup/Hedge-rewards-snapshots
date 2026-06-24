@@ -1,109 +1,55 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
-const { createTransferCheckedInstruction, getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
-const fs = require('fs');
-const csv = require('fast-csv');
+name: Saturday Snapshot and Same-Day Payout
 
-const RPC_ENDPOINT = 'https://solana.com';
-const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
-const DECIMALS = 6;
+on:
+  schedule:
+    - cron: '0 16 * * 6' # Saturdays at 16:00 UTC (Snapshot)
+    - cron: '0 20 * * 6' # Saturdays at 20:00 UTC (Payout)
+  workflow_dispatch:
 
-if (!process.env.PAYER_SECRET_KEY) {
-    console.error("[CRITICAL] PAYER_SECRET_KEY variable is missing!");
-    process.exit(1);
-}
+jobs:
+  process:
+    runs-on: ubuntu-latest
 
-const payerSecretKey = JSON.parse(process.env.PAYER_SECRET_KEY);
-const payerKeypair = Keypair.fromSecretKey(Uint8Array.from(payerSecretKey));
+    permissions:
+      contents: write
 
-async function runAirdrop() {
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const fileName = `snapshot_${dateStr}.csv`;
+    steps:
+    - name: Checkout Code Base
+      uses: actions/checkout@v4
 
-    if (!fs.existsSync(fileName)) {
-        console.error(`[ERROR] Snapshot file ${fileName} not found. Skipping distribution.`);
-        return;
-    }
+    - name: Set up Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
 
-    const connection = new Connection(RPC_ENDPOINT, 'confirmed');
-    const mintPublicKey = new PublicKey(TOKEN_MINT_ADDRESS);
-    const sourceATA = await getAssociatedTokenAddress(mintPublicKey, payerKeypair.publicKey);
+    - name: Install Runtime Dependencies
+      run: npm install
 
-    const recipients = [];
-    let totalRequiredTokens = 0n;
-    
-    fs.createReadStream(fileName)
-        .pipe(csv.parse({ headers: true }))
-        .on('data', (row) => {
-            if (row.Address && row.Amount && parseFloat(row.Amount) > 0) {
-                const rawAmount = BigInt(Math.round(parseFloat(row.Amount) * Math.pow(10, DECIMALS)));
-                totalRequiredTokens += rawAmount;
-                recipients.push({
-                    address: new PublicKey(row.Address),
-                    amount: rawAmount
-                });
-            }
-        })
-        .on('end', async () => {
-            console.log(`[AUDIT] Extracted ${recipients.length} addresses. Total required: ${Number(totalRequiredTokens) / Math.pow(10, DECIMALS)} HEDGE`);
-            
-            try {
-                const tokenAccount = await getAccount(connection, sourceATA);
-                const currentBalance = tokenAccount.amount;
-                console.log(`[AUDIT] Payer wallet balance: ${Number(currentBalance) / Math.pow(10, DECIMALS)} HEDGE`);
+    - name: Run Snapshot Logic (Saturdays 16:00)
+      if: github.event.schedule == '0 16 * * 6'
+      run: node snapshot.js
 
-                if (currentBalance < totalRequiredTokens) {
-                    const missing = Number(totalRequiredTokens - currentBalance) / Math.pow(10, DECIMALS);
-                    console.error(`[CRITICAL] STOPPING AIRDROP: Insufficient funds. You need to deposit ${missing} more HEDGE tokens into your payer wallet.`);
-                    process.exit(1);
-                }
-            } catch (e) {
-                console.error("[CRITICAL] Source token account does not exist or has 0 tokens. Deposit HEDGE tokens first.");
-                process.exit(1);
-            }
+    - name: Run Payout Logic (Saturdays 20:00)
+      if: github.event.schedule == '0 20 * * 6'
+      run: node snapshot.js --payout
+      env:
+        PAYER_SECRET_KEY: ${{ secrets.PAYER_SECRET_KEY }}
 
-            const batchSize = 10; 
-            for (let i = 0; i < recipients.length; i += batchSize) {
-                const batch = recipients.slice(i, i + batchSize);
-                const transaction = new Transaction();
-                
-                const { blockhash } = await connection.getLatestBlockhash('confirmed');
-                transaction.recentBlockhash = blockhash;
-                transaction.feePayer = payerKeypair.publicKey;
+    - name: Run Manual Full Simulation Test
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        node snapshot.js --test
+        node snapshot.js --payout
+      env:
+        PAYER_SECRET_KEY: ${{ secrets.PAYER_SECRET_KEY }}
 
-                for (const recipient of batch) {
-                    try {
-                        const destinationATA = await getAssociatedTokenAddress(mintPublicKey, recipient.address);
-                        transaction.add(
-                            createTransferCheckedInstruction(
-                                sourceATA,
-                                mintPublicKey,
-                                destinationATA,
-                                payerKeypair.publicKey,
-                                recipient.amount,
-                                DECIMALS
-                            )
-                        );
-                    } catch (e) {
-                        continue;
-                    }
-                }
+    - name: Push CSV Logs Openly to Repository
+      run: |
+        git config --global user.name "Satoshi-Proof-Bot"
+        git config --global user.email "bot@github.internal"
+        git add snapshot_*.csv
+        git commit -m "Automated Weekly Yield Cycle: $(date +'%Y-%m-%d')" || exit 0
+        git push origin main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-                try {
-                    const signature = await connection.sendTransaction(transaction, [payerKeypair], {
-                        skipPreflight: true,
-                        preflightCommitment: 'confirmed'
-                    });
-                    console.log(`[SUCCESS] Batch ${Math.floor(i / batchSize) + 1} sent. Tx: ${signature}`);
-                } catch (err) {
-                    console.error(`[ERROR] Batch failed:`, err.message);
-                }
-            }
-            console.log("[FINISHED] Distribution cycle completed.");
-        });
-}
-
-runAirdrop().catch(err => {
-    console.error(err);
-    process.exit(1);
-});
