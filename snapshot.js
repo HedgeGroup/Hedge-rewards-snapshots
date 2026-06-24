@@ -1,9 +1,11 @@
+
 const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
 const fs = require('fs');
 const csv = require('fast-csv');
 
-const RPC_ENDPOINT = 'https://solana.com';
+// Kasutame ülikiiret ja koormuskindlat QuickNode infrastruktuuri otselinki
+const RPC_ENDPOINT = 'https://quiknode.pro';
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
 
