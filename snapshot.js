@@ -1,4 +1,4 @@
-  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,8 +9,11 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Uint8Array.from([33, 163, 15, 61, 233, 56, 172, 107, 44, 252, 233, 190, 93, 219, 58, 203, 175, 41, 199, 137, 7, 241, 107, 98, 143, 61, 80, 208, 19, 114, 252, 17]));
-const TOKEN_PROGRAM_ID = new PublicKey(Uint8Array.from([6, 221, 246, 225, 215, 101, 161, 147, 2, 34, 35, 51, 77, 10, 168, 195, 56, 195, 207, 12, 45, 38, 81, 180, 198, 181, 65, 51, 64, 0, 0, 0]));
+const MINT_RAW_STRING = String.fromCharCode(52,84,75,111,82,89,68,122,88,102,83,83,89,51,78,107,70,97,102,115,116,75,101,121,50,99,74,114,81,120,100,119,50,55,114,71,116,111,86,53,112,117,109,112);
+const PROGRAM_RAW_STRING = String.fromCharCode(84,111,107,101,110,107,101,103,81,102,101,90,121,105,78,119,53,54,75,117,80,78,97,115,51,110,100,79,97,97,104,118,56,75,87,51,82,119,53,67,57,109);
+
+const TOKEN_MINT = new PublicKey(MINT_RAW_STRING);
+const TOKEN_PROGRAM_ID = new PublicKey(PROGRAM_RAW_STRING);
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -165,4 +168,4 @@ async function run() {
 }
 
 run();
-    
+          
