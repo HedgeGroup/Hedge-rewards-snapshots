@@ -1,0 +1,9 @@
+{
+  "name": "hedge-snapshot-bot",
+  "version": "1.0.0",
+  "main": "snapshot.js",
+  "dependencies": {
+    "@solana/web3.js": "^1.95.3",
+    "fast-csv": "^5.0.1"
+  }
+}
