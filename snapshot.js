@@ -1,4 +1,4 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+ const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,8 +9,7 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Buffer.from([34,220,103,115,108,189,203,34,92,238,103,143,158,11,88,141,40,248,154,166,236,252,99,235,16,113,87,3,101,235,116,63]));
-const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from([6,221,246,225,215,101,161,147,2,222,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
+const TOKEN_MINT = new PublicKey(Buffer.from([51, 169, 33, 215, 179, 38, 191, 95, 188, 103, 179, 111, 219, 206, 35, 36, 202, 149, 116, 214, 64, 250, 231, 245, 58, 71, 152, 147, 213, 154, 114, 173]));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -26,7 +25,7 @@ try {
 
   if (wordCount >= 12 && wordCount <= 24) {
     if (!bip39.validateMnemonic(cleanedKey)) {
-      console.error("[CRITICAL ERROR] The 12-word phrase entered is invalid. Check for typos or misspelled words.");
+      console.error("[CRITICAL ERROR] The 12-word phrase entered is invalid.");
       process.exit(1);
     }
     const seed = bip39.mnemonicToSeedSync(cleanedKey);
@@ -45,7 +44,7 @@ try {
     payer = Keypair.fromSecretKey(secretKey);
   }
 } catch (e) {
-  console.error("[CRITICAL ERROR] Wallet authorization failed. Your private key or 12-word seed structure is incorrect.");
+  console.error("[CRITICAL ERROR] Wallet authorization failed.");
   process.exit(1);
 }
 
@@ -59,43 +58,83 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function fetchAllHoldersHelius(mint) {
+  const url = RPC_URL;
+  let page = 1;
+  let allHolders = [];
+  
+  while (true) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'helius-get-token-accounts',
+          method: 'getTokenAccounts',
+          params: {
+            mint: mint.toBase58(),
+            page: page,
+            limit: 1000,
+            options: { showZeroBalance: false }
+          },
+        }),
+      });
+      
+      const data = await response.json();
+      if (!data.result || data.result.token_accounts.length === 0) {
+        break;
+      }
+      
+      allHolders = allHolders.concat(data.result.token_accounts);
+      page++;
+      await sleep(100);
+    } catch (err) {
+      break;
+    }
+  }
+  return allHolders;
+}
+
 async function run() {
   if (!IS_TEST) {
     const randomDelay = Math.floor(Math.random() * 7200000);
     await sleep(randomDelay);
   }
 
-  console.log("[INFO] Scanning for holders...");
-  let accounts;
+  console.log("[INFO] Scanning for holders using Helius Asset API...");
+  let rawAccounts = [];
   try {
-    const parsedAccounts = await connection.getParsedProgramAccounts(
-      TOKEN_PROGRAM_ID,
-      {
-        filters: [
-          { dataSize: 165 },
-          { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
-        ]
-      }
-    );
-    accounts = parsedAccounts;
+    rawAccounts = await fetchAllHoldersHelius(TOKEN_MINT);
   } catch (err) {
-    console.error("[CRITICAL ERROR] RPC Scan failed:", err.message);
-    process.exit(1);
+    console.log("[FALLBACK] API failed, trying basic node fallback...");
+    try {
+      const response = await connection.getTokenLargestAccounts(TOKEN_MINT);
+      rawAccounts = response.value.map(a => ({ owner: a.address.toString(), amount: a.amount }));
+    } catch (e) {
+      process.exit(1);
+    }
   }
 
   const snapshot = [];
-  for (const acc of accounts) {
-    const data = acc.account.data.parsed.info;
-    const amount = BigInt(data.tokenAmount.amount);
-    const owner = data.owner;
+  const excludedAcks = [
+    payer.publicKey.toBase58(),
+    '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS' // Common Burn/Pool filter
+  ];
 
-    if (amount > 0n && owner !== payer.publicKey.toBase58()) {
+  for (const acc of rawAccounts) {
+    const owner = acc.owner || acc.address;
+    const amountStr = acc.amount || (acc.tokenAmount ? acc.tokenAmount.amount : '0');
+    const amount = BigInt(amountStr);
+
+    if (amount > 0n && owner && !excludedAcks.includes(owner)) {
       snapshot.push({
         owner: new PublicKey(owner),
         reward: (amount * 3n) / 100n
       });
     }
   }
+  
   console.log(`[SUCCESS] Found ${snapshot.length} active token holders.`);
 
   if (!IS_TEST) {
@@ -154,5 +193,4 @@ async function run() {
 }
 
 run();
-
-      
+     
