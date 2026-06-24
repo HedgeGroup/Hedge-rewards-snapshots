@@ -9,11 +9,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const MINT_RAW_STRING = String.fromCharCode(52,84,75,111,82,89,68,122,88,102,83,83,89,51,78,107,70,97,102,115,116,75,101,121,50,99,74,114,81,120,100,119,50,55,114,71,116,111,86,53,112,117,109,112);
-const PROGRAM_RAW_STRING = String.fromCharCode(84,111,107,101,110,107,101,103,81,102,101,90,121,105,78,119,53,54,75,117,80,78,97,115,51,110,100,79,97,97,104,118,56,75,87,51,82,119,53,67,57,109);
-
-const TOKEN_MINT = new PublicKey(MINT_RAW_STRING);
-const TOKEN_PROGRAM_ID = new PublicKey(PROGRAM_RAW_STRING);
+const TOKEN_MINT = new PublicKey(new Uint8Array([51,169,33,215,179,26,191,95,188,67,179,111,219,206,35,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
+const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,2,34,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -68,7 +65,7 @@ async function run() {
     await sleep(randomDelay);
   }
 
-  console.log(`[INFO] Scanning blockchain for all ${TOKEN_MINT.toBase58()} holders...`);
+  console.log(`[INFO] Scanning blockchain for all holders...`);
   let rawAccounts = [];
   try {
     rawAccounts = await connection.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
@@ -168,4 +165,3 @@ async function run() {
 }
 
 run();
-          
