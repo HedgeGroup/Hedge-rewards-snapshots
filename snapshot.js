@@ -7,7 +7,7 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(new Uint8Array([52,194,52,246,134,81,38,154,233,149,36,252,247,159,165,119,103,111,107,178,165,178,92,49,24,244,115,190,140,240,65,49]));
+const TOKEN_MINT = new PublicKey(new Uint8Array([54,166,134,228,88,86,165,110,31,236,104,185,14,142,40,78,169,219,84,183,16,108,187,143,184,87,31,88,32,159,165,58]));
 const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,217,203,225,70,206,235,121,172,28,180,133,237,95,91,55,145,58,140,245,133,126,255,0,169]));
 
 if (!RPC_URL) {
@@ -20,25 +20,29 @@ if (!PAYER_KEY) {
   process.exit(1);
 }
 
-if (PAYER_KEY) {
-  PAYER_KEY = PAYER_KEY.replace(/[\r\n]/g, '').trim();
-  if (PAYER_KEY.startsWith('"') || PAYER_KEY.startsWith("'")) PAYER_KEY = PAYER_KEY.slice(1);
-  if (PAYER_KEY.endsWith('"') || PAYER_KEY.endsWith("'")) PAYER_KEY = PAYER_KEY.slice(0, -1);
-  PAYER_KEY = PAYER_KEY.trim();
-}
-
 const connection = new Connection(RPC_URL, 'confirmed');
 
-let secretKey;
+let secretKey = null;
 try {
-  if (PAYER_KEY.startsWith('[')) {
-    const cleanedJson = PAYER_KEY.replace(/[^0-9,\[\]]/g, '');
-    secretKey = Uint8Array.from(JSON.parse(cleanedJson));
+  let cleaned = PAYER_KEY.replace(/[\r\n\t]/g, '').trim();
+  if (cleaned.startsWith('"') || cleaned.startsWith("'")) cleaned = cleaned.slice(1);
+  if (cleaned.endsWith('"') || cleaned.endsWith("'")) cleaned = cleaned.slice(0, -1);
+  cleaned = cleaned.trim();
+
+  if (cleaned.includes(',') || cleaned.startsWith('[') || cleaned.endsWith(']')) {
+    if (!cleaned.startsWith('[')) cleaned = '[' + cleaned;
+    if (!cleaned.endsWith(']')) cleaned = cleaned + ']';
+    const jsonNumbers = cleaned.replace(/[^0-9,]/g, '');
+    secretKey = Uint8Array.from(jsonNumbers.split(',').map(Number));
   } else {
-    const cleanedBase58 = PAYER_KEY.replace(/[^a-zA-Z0-9]/g, '');
-    secretKey = bs58.decode(cleanedBase58);
+    const pureBase58 = cleaned.replace(/[^a-zA-Z0-9]/g, '');
+    secretKey = bs58.decode(pureBase58);
   }
 } catch (e) {
+  secretKey = null;
+}
+
+if (!secretKey || secretKey.length !== 64) {
   console.error("[CRITICAL ERROR] Your PAYER_SECRET_KEY text inside GitHub Secrets is broken or missing characters!");
   process.exit(1);
 }
@@ -154,4 +158,4 @@ async function run() {
 }
 
 run();
-
+        
