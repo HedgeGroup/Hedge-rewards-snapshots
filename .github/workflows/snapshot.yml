@@ -1,10 +1,9 @@
-
 name: Saturday Snapshot and Same-Day Payout
 
 on:
   schedule:
-    - cron: '0 16 * * 6' # Automatically fires Saturdays at 16:00 UTC (Snapshot)
-    - cron: '0 20 * * 6' # Automatically fires Saturdays at 20:00 UTC (Payout)
+    - cron: '0 16 * * 6' # Saturdays at 16:00 UTC (Snapshot)
+    - cron: '0 20 * * 6' # Saturdays at 20:00 UTC (Payout)
   workflow_dispatch:
 
 jobs:
@@ -26,21 +25,21 @@ jobs:
     - name: Install Runtime Dependencies
       run: npm install
 
-    - name: Run Snapshot (Saturdays 16:00)
+    - name: Run Snapshot Logic (Saturdays 16:00)
       if: github.event.schedule == '0 16 * * 6'
       run: node snapshot.js
 
-    - name: Run Payout (Saturdays 20:00)
+    - name: Run Payout Logic (Saturdays 20:00)
       if: github.event.schedule == '0 20 * * 6'
-      run: node airdrop.js
+      run: node snapshot.js --payout
       env:
         PAYER_SECRET_KEY: ${{ secrets.PAYER_SECRET_KEY }}
 
-    - name: Run Manual Full Test
+    - name: Run Manual Full Simulation Test
       if: github.event_name == 'workflow_dispatch'
       run: |
         node snapshot.js --test
-        node airdrop.js
+        node snapshot.js --payout
       env:
         PAYER_SECRET_KEY: ${{ secrets.PAYER_SECRET_KEY }}
 
@@ -53,3 +52,4 @@ jobs:
         git push origin main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
