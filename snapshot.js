@@ -1,36 +1,156 @@
-    name: HEDGE Reward System
+    const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
+const bs58 = require('bs58');
+const bip39 = require('bip39');
+const { derivePath } = require('ed25519-hd-key');
+require('dotenv').config();
 
-on:
-  workflow_dispatch:
-    inputs:
-      test_mode:
-        required: true
-        default: 'true'
-  schedule:
-    - cron: '0 15 * * 6'
+const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
+const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
+const IS_TEST = process.env.IS_TEST === 'true';
 
-jobs:
-  hedge-rewards:
-    runs-on: ubuntu-latest
+const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+if (!RPC_URL || !PAYER_SECRET_KEY) {
+  console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
+  process.exit(1);
+}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
+const connection = new Connection(RPC_URL, 'confirmed');
+let payer;
 
-      - name: Install Solana and Seed Phrase Libraries
-        run: npm install @solana/web3.js @solana/spl-token dotenv bs58 bip39 ed25519-hd-key
+try {
+  let cleanedKey = PAYER_SECRET_KEY.replace(/[\r\n\t"']/g, '').trim();
+  const wordCount = cleanedKey.split(/\s+/).length;
 
-      - name: Variables
-        run: |
-          echo "RPC_URL=${{ secrets.SOLANA_RPC_URL }}" >> .env
-          echo "PAYER_SECRET_KEY=${{ secrets.PAYER_SECRET_KEY }}" >> .env
-          echo "IS_TEST=${{ github.event.inputs.test_mode || 'false' }}" >> .env
+  if (wordCount >= 12 && wordCount <= 24) {
+    if (!bip39.validateMnemonic(cleanedKey)) {
+      console.error("[CRITICAL ERROR] The 12-word phrase entered is invalid. Check for typos or misspelled words.");
+      process.exit(1);
+    }
+    const seed = bip39.mnemonicToSeedSync(cleanedKey);
+    const derivedSeed = derivePath("m/44'/501'/0'/0'", seed.toString('hex')).key;
+    payer = Keypair.fromSeed(derivedSeed);
+  } else {
+    let secretKey;
+    if (cleanedKey.startsWith('[') || cleanedKey.includes(',')) {
+      const jsonNumbers = cleanedKey.replace(/[^0-9,]/g, '');
+      secretKey = Uint8Array.from(jsonNumbers.split(',').map(Number));
+    } else if (/^[0-9a-fA-F]+$/.test(cleanedKey)) {
+      secretKey = Uint8Array.from(Buffer.from(cleanedKey, 'hex'));
+    } else {
+      secretKey = bs58.decode(cleanedKey.replace(/[^a-zA-Z0-9]/g, ''));
+    }
+    payer = Keypair.fromSecretKey(secretKey);
+  }
+} catch (e) {
+  console.error("[CRITICAL ERROR] Wallet authorization failed. Your private key or 12-word seed structure is incorrect.");
+  process.exit(1);
+}
 
-      - name: Run Reward System
-        run: node snapshot.js
-  
+console.log(`[INFO] Wallet successfully unlocked. Public address: ${payer.publicKey.toBase58()}`);
+
+function getLondonHour() {
+  return parseInt(new Date().toLocaleString("en-US", { timeZone: "Europe/London", hour: "2-digit", hour12: false }), 10);
+}
+
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function run() {
+  if (!IS_TEST) {
+    const randomDelay = Math.floor(Math.random() * 7200000);
+    await sleep(randomDelay);
+  }
+
+  console.log("[INFO] Scanning for holders...");
+  let accounts;
+  try {
+    const parsedAccounts = await connection.getParsedProgramAccounts(
+      TOKEN_PROGRAM_ID,
+      {
+        filters: [
+          { dataSize: 165 },
+          { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
+        ]
+      }
+    );
+    accounts = parsedAccounts;
+  } catch (err) {
+    console.error("[CRITICAL ERROR] RPC Scan failed:", err.message);
+    process.exit(1);
+  }
+
+  const snapshot = [];
+  for (const acc of accounts) {
+    const data = acc.account.data.parsed.info;
+    const amount = BigInt(data.tokenAmount.amount);
+    const owner = data.owner;
+
+    if (amount > 0n && owner !== payer.publicKey.toBase58()) {
+      snapshot.push({
+        owner: new PublicKey(owner),
+        reward: (amount * 3n) / 100n
+      });
+    }
+  }
+  console.log(`[SUCCESS] Found ${snapshot.length} active token holders.`);
+
+  if (!IS_TEST) {
+    while (getLondonHour() < 20) {
+      await sleep(60000);
+    }
+  }
+
+  let payerAta;
+  try {
+    payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
+  } catch (err) {
+    console.error("[CRITICAL ERROR] Payer wallet does not have a HEDGE token account setup.");
+    process.exit(1);
+  }
+
+  for (const holder of snapshot) {
+    if (holder.reward === 0n) continue;
+    try {
+      const holderAta = await getAssociatedTokenAddress(TOKEN_MINT, holder.owner);
+      const transaction = new Transaction();
+      
+      const info = await connection.getAccountInfo(holderAta);
+      if (info === null) {
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            payer.publicKey,
+            holderAta,
+            holder.owner,
+            TOKEN_MINT
+          )
+        );
+      }
+
+      transaction.add(
+        createTransferCheckedInstruction(
+          payerAta,
+          TOKEN_MINT,
+          holderAta,
+          payer.publicKey,
+          holder.reward,
+          9
+        )
+      );
+      
+      const txid = await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
+      console.log(`[PAYOUT] Success to ${holder.owner.toBase58()}. Tx: ${txid}`);
+      await sleep(300);
+    } catch (txErr) {
+      await sleep(300);
+      continue;
+    }
+  }
+  console.log("[SUCCESS] Process complete.");
+  process.exit(0);
+}
+
+run();
