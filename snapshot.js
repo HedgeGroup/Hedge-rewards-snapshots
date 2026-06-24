@@ -38,7 +38,7 @@ async function fetchAccounts() {
 }
 
 async function runSnapshot() {
-    const isManualTest = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch';
+    const isManualTest = process.argv.includes('--test');
     
     if (isManualTest) {
         console.log('[TEST] Manual trigger detected. Sleeping for 10 seconds for quick test...');
