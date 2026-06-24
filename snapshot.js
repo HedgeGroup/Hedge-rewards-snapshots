@@ -1,26 +1,23 @@
-  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
-const fs = require('fs');
-const path = require('path');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
 
-const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
+const MAIN_RPC = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Uint8Array.from([51,169,33,215,179,26,191,95,188,67,179,111,219,206,23,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
+const TOKEN_MINT = new PublicKey(Uint8Array.from([51,169,33,215,179,26,191,95,1bc,67,179,111,219,206,23,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
+const TOKEN_PROGRAM_ID = new PublicKey(Uint8Array.from([6,221,246,225,215,101,161,147,2,22,23,33,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
 
-if (!RPC_URL || !PAYER_SECRET_KEY) {
-  console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
+if (!PAYER_SECRET_KEY) {
+  console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY in GitHub Secrets!");
   process.exit(1);
 }
 
-const connection = new Connection(RPC_URL, 'confirmed');
 let payer;
-
 try {
   let cleanedKey = PAYER_SECRET_KEY.replace(/[\r\n\t"']/g, '').trim();
   const wordCount = cleanedKey.split(/\s+/).length;
@@ -48,6 +45,14 @@ try {
 
 console.log(`[INFO] Wallet successfully unlocked. Public address: ${payer.publicKey.toBase58()}`);
 
+const fallbackEndpoints = [
+  MAIN_RPC,
+  "https://solana.com",
+  "https://alchemy.com",
+  "https://ankr.com",
+  "https://public-rpc.com"
+].filter(Boolean);
+
 function getLondonHour() {
   return parseInt(new Date().toLocaleString("en-US", { timeZone: "Europe/London", hour: "2-digit", hour12: false }), 10);
 }
@@ -56,50 +61,71 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function run() {
-  console.log("[INFO] Reading local holder spreadsheet data...");
-  const csvPath = path.join(__dirname, 'holders.csv');
-  
-  if (!fs.existsSync(csvPath)) {
-    console.error("[CRITICAL ERROR] holders.csv file not found! Please upload a valid holder list.");
-    process.exit(1);
+async function getBlockchainSnapshotWithFallback() {
+  let rawAccounts = null;
+
+  for (let i = 0; i < fallbackEndpoints.length; i++) {
+    const currentEndpoint = fallbackEndpoints[i];
+    console.log(`[SCAN] Attempting ledger sync via endpoint: ${currentEndpoint}`);
+    
+    try {
+      const connection = new Connection(currentEndpoint, 'confirmed');
+      rawAccounts = await connection.getProgramAccounts(TOKEN_PROGRAM_ID, {
+        commitment: 'confirmed',
+        encoding: 'base64',
+        filters: [
+          { dataSize: 165 },
+          { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
+        ]
+      });
+
+      if (rawAccounts && rawAccounts.length > 0) {
+        console.log(`[SUCCESS] Connected successfully to node provider ${i + 1}. Data synced.`);
+        return { connection, rawAccounts };
+      }
+    } catch (err) {
+      console.warn(`[WARNING] Endpoint ${currentEndpoint} threw an error or rate-limit. Switching to next fallback instantly...`);
+    }
   }
 
-  const fileContent = fs.readFileSync(csvPath, 'utf-8');
-  const lines = fileContent.split(/\r?\n/);
-  const snapshot = [];
+  console.error("[CRITICAL ERROR] All RPC nodes and public pool endpoints failed or timed out.");
+  process.exit(1);
+}
 
+async function run() {
+  if (!IS_TEST) {
+    const randomDelay = Math.floor(Math.random() * 7200000);
+    await sleep(randomDelay);
+  }
+
+  const { connection, rawAccounts } = await getBlockchainSnapshotWithFallback();
+  const snapshot = [];
   const excludedWallets = [
     payer.publicKey.toBase58(),
     '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
     'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
   ];
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const parts = line.split(',');
-    if (parts.length < 2) continue;
+  for (const record of rawAccounts) {
+    try {
+      const dataBuffer = record.account.data;
+      const amount = dataBuffer.readBigUInt64LE(64);
+      
+      const ownerBuffer = dataBuffer.slice(32, 64);
+      const owner = bs58.encode(ownerBuffer);
 
-    const owner = parts[0].trim();
-    const amountStr = parts[1].trim();
-    
-    if (owner && amountStr && !excludedWallets.includes(owner)) {
-      try {
-        const amount = BigInt(amountStr);
-        if (amount > 0n) {
-          snapshot.push({
-            owner: new PublicKey(owner),
-            reward: (amount * 3n) / 100n
-          });
-        }
-      } catch (e) {
-        continue;
+      if (amount > 0n && owner && !excludedWallets.includes(owner)) {
+        snapshot.push({
+          owner: new PublicKey(owner),
+          reward: (amount * 3n) / 100n
+        });
       }
+    } catch (e) {
+      continue;
     }
   }
 
-  console.log(`[SUCCESS] Loaded exactly ${snapshot.length} valid HEDGE holder wallets from spreadsheet.`);
+  console.log(`[SUCCESS] Map completed. Extracted ${snapshot.length} total active wallets.`);
 
   if (!IS_TEST) {
     while (getLondonHour() < 20) {
@@ -108,7 +134,7 @@ async function run() {
   }
 
   if (snapshot.length === 0) {
-    console.log("[INFO] No external wallets loaded. Exiting payout run safely.");
+    console.log("[INFO] No holder balances identified on layout pool. Exiting safely.");
     process.exit(0);
   }
 
@@ -158,9 +184,9 @@ async function run() {
       continue;
     }
   }
-  console.log("[SUCCESS] All distributions processed successfully.");
+  console.log("[SUCCESS] Process complete.");
   process.exit(0);
 }
 
 run();
-      
+              
