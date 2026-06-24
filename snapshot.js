@@ -1,16 +1,14 @@
-    const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
 
 const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
-let TOKEN_MINT_STR = process.env.TOKEN_MINT ? process.env.TOKEN_MINT.replace(/[^a-zA-Z0-9]/g, '') : '';
 const IS_TEST = process.env.IS_TEST === 'true';
 
-if (!TOKEN_MINT_STR || TOKEN_MINT_STR.length < 32 || TOKEN_MINT_STR.length > 44) {
-  TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
-}
+const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
 
 if (PAYER_KEY) {
   PAYER_KEY = PAYER_KEY.replace(/[\r\n]/g, '').trim();
@@ -25,8 +23,6 @@ if (!RPC_URL || !PAYER_KEY) {
 }
 
 const connection = new Connection(RPC_URL, 'confirmed');
-const TOKEN_MINT = new PublicKey(TOKEN_MINT_STR);
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
 
 let secretKey;
 try {
@@ -150,4 +146,3 @@ async function run() {
 }
 
 run();
-  
