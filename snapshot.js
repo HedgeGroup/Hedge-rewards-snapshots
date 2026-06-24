@@ -1,5 +1,4 @@
-
-     const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
@@ -8,8 +7,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(new Uint8Array([51,169,33,215,179,38,191,95,188,103,179,111,219,206,35,36,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
-const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,2,34,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
+const TOKEN_MINT = new PublicKey(new Uint8Array([51, 169, 33, 215, 179, 38, 191, 95, 188, 103, 179, 111, 219, 206, 35, 36, 202, 149, 116, 214, 64, 250, 231, 245, 58, 71, 152, 147, 213, 154, 114, 173]));
+const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6, 221, 246, 225, 215, 101, 161, 147, 2, 34, 35, 51, 77, 10, 168, 195, 56, 195, 207, 12, 45, 56, 81, 180, 198, 181, 65, 51, 64, 0, 0, 0]));
 
 if (!RPC_URL) {
   console.error("[CRITICAL ERROR] RPC_URL is empty inside your GitHub Secrets!");
@@ -23,25 +22,18 @@ if (!PAYER_SECRET_KEY) {
 
 let secretKey = null;
 try {
-  let cleaned = PAYER_SECRET_KEY.replace(/[\r\n\t]/g, '').trim();
-  if (cleaned.startsWith('"') || cleaned.startsWith("'")) cleaned = cleaned.slice(1);
-  if (cleaned.endsWith('"') || cleaned.endsWith("'")) cleaned = cleaned.slice(0, -1);
-  cleaned = cleaned.trim();
-
-  if (cleaned.startsWith('[') || cleaned.includes(',')) {
-    const jsonNumbers = cleaned.replace(/[^0-9,]/g, '');
-    secretKey = Uint8Array.from(jsonNumbers.split(',').map(Number));
-  } else if (/^[0-9a-fA-F]+$/.test(cleaned)) {
+  let cleaned = PAYER_SECRET_KEY.replace(/[^a-fA-F0-9]/g, '').trim();
+  
+  if (cleaned.length >= 128) {
+    cleaned = cleaned.substring(0, 128);
     secretKey = Uint8Array.from(Buffer.from(cleaned, 'hex'));
   } else {
-    try {
-      secretKey = bs58.decode(cleaned);
-    } catch (b58Err) {
-      if (/^[0-9a-fA-F]+$/.test(cleaned.replace(/[^0-9a-fA-F]/g, ''))) {
-        secretKey = Uint8Array.from(Buffer.from(cleaned.replace(/[^0-9a-fA-F]/g, ''), 'hex'));
-      } else {
-        secretKey = Uint8Array.from(Buffer.from(cleaned, 'utf-8').slice(0, 64));
-      }
+    let rawClean = PAYER_SECRET_KEY.replace(/[\r\n\t'"\s]/g, '').trim();
+    if (rawClean.startsWith('[') || rawClean.includes(',')) {
+      const jsonNumbers = rawClean.replace(/[^0-9,]/g, '');
+      secretKey = Uint8Array.from(jsonNumbers.split(',').map(Number));
+    } else {
+      secretKey = bs58.decode(rawClean);
     }
   }
 } catch (e) {
@@ -49,7 +41,7 @@ try {
 }
 
 if (!secretKey || secretKey.length !== 64) {
-  console.error("[CRITICAL ERROR] Unable to parse your Hex private key. Verify that no characters were clipped off when pasting.");
+  console.error(`[CRITICAL ERROR] Private key parsing failed. Length is ${secretKey ? secretKey.length : 0} bytes instead of 64.`);
   process.exit(1);
 }
 
@@ -165,4 +157,5 @@ async function run() {
 }
 
 run();
-       
+
+               
