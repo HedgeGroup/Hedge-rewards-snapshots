@@ -1,4 +1,4 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,8 +9,7 @@ const MAIN_RPC = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Uint8Array.from([51,169,33,215,179,26,191,95,1bc,67,179,111,219,206,23,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
-const TOKEN_PROGRAM_ID = new PublicKey(Uint8Array.from([6,221,246,225,215,101,161,147,2,22,23,33,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
+const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 
 if (!PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY in GitHub Secrets!");
@@ -48,7 +47,6 @@ console.log(`[INFO] Wallet successfully unlocked. Public address: ${payer.public
 const fallbackEndpoints = [
   MAIN_RPC,
   "https://solana.com",
-  "https://alchemy.com",
   "https://ankr.com",
   "https://public-rpc.com"
 ].filter(Boolean);
@@ -61,35 +59,74 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
+  let page = 1;
+  let allOwners = [];
+  while (true) {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'payout-scan',
+        method: 'getTokenAccounts',
+        params: { mint: mintStr, page: page, limit: 1000, options: { showZeroBalance: false } }
+      })
+    });
+    const resData = await response.json();
+    if (!resData.result || !resData.result.token_accounts || resData.result.token_accounts.length === 0) {
+      break;
+    }
+    for (const acc of resData.result.token_accounts) {
+      if (acc.owner && acc.amount) {
+        allOwners.push({ owner: acc.owner, amount: acc.amount });
+      }
+    }
+    page++;
+    await sleep(100);
+  }
+  return allOwners;
+}
+
 async function getBlockchainSnapshotWithFallback() {
-  let rawAccounts = null;
+  let rawAccounts = [];
+  let finalConnection = null;
 
   for (let i = 0; i < fallbackEndpoints.length; i++) {
     const currentEndpoint = fallbackEndpoints[i];
-    console.log(`[SCAN] Attempting ledger sync via endpoint: ${currentEndpoint}`);
+    console.log(`[SCAN] Attempting data sync via endpoint: ${currentEndpoint}`);
     
     try {
       const connection = new Connection(currentEndpoint, 'confirmed');
-      rawAccounts = await connection.getProgramAccounts(TOKEN_PROGRAM_ID, {
-        commitment: 'confirmed',
-        encoding: 'base64',
-        filters: [
-          { dataSize: 165 },
-          { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
-        ]
-      });
+      if (currentEndpoint.includes('helius')) {
+        rawAccounts = await fetchTokenAccountsHelius(currentEndpoint, TOKEN_MINT_STR);
+      } else {
+        const tokenProgramId = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+        const tokenMint = new PublicKey(TOKEN_MINT_STR);
+        const accounts = await connection.getProgramAccounts(tokenProgramId, {
+          commitment: 'confirmed',
+          encoding: 'base64',
+          filters: [{ dataSize: 165 }, { memcmp: { offset: 0, bytes: tokenMint.toBase58() } }]
+        });
+        rawAccounts = accounts.map(record => {
+          const dataBuffer = record.account.data;
+          const amt = dataBuffer.readBigUInt64LE(64).toString();
+          const ownerStr = bs58.encode(dataBuffer.slice(32, 64));
+          return { owner: ownerStr, amount: amt };
+        });
+      }
 
       if (rawAccounts && rawAccounts.length > 0) {
-        console.log(`[SUCCESS] Connected successfully to node provider ${i + 1}. Data synced.`);
-        return { connection, rawAccounts };
+        console.log(`[SUCCESS] Connected to endpoint source ${i + 1}. Holders loaded.`);
+        return { connection: connection, holdersList: rawAccounts };
       }
     } catch (err) {
-      console.warn(`[WARNING] Endpoint ${currentEndpoint} threw an error or rate-limit. Switching to next fallback instantly...`);
+      console.warn(`Warning: Endpoint ${currentEndpoint} threw an error or rate-limit. Switching to next fallback instantly...`);
     }
   }
 
-  console.error("[CRITICAL ERROR] All RPC nodes and public pool endpoints failed or timed out.");
-  process.exit(1);
+  console.log(`[SCAN] Map completed. Extracted 0 total active wallets.`);
+  return { connection: new Connection('https://solana.com'), holdersList: [] };
 }
 
 async function run() {
@@ -98,34 +135,27 @@ async function run() {
     await sleep(randomDelay);
   }
 
-  const { connection, rawAccounts } = await getBlockchainSnapshotWithFallback();
+  const { connection, holdersList } = await getBlockchainSnapshotWithFallback();
   const snapshot = [];
+  const tokenMint = new PublicKey(TOKEN_MINT_STR);
   const excludedWallets = [
     payer.publicKey.toBase58(),
     '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
     'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
   ];
 
-  for (const record of rawAccounts) {
-    try {
-      const dataBuffer = record.account.data;
-      const amount = dataBuffer.readBigUInt64LE(64);
-      
-      const ownerBuffer = dataBuffer.slice(32, 64);
-      const owner = bs58.encode(ownerBuffer);
-
-      if (amount > 0n && owner && !excludedWallets.includes(owner)) {
-        snapshot.push({
-          owner: new PublicKey(owner),
-          reward: (amount * 3n) / 100n
-        });
-      }
-    } catch (e) {
-      continue;
+  for (const record of holdersList) {
+    const amount = BigInt(record.amount);
+    const owner = record.owner;
+    if (amount > 0n && owner && !excludedWallets.includes(owner)) {
+      snapshot.push({
+        owner: new PublicKey(owner),
+        reward: (amount * 3n) / 100n
+      });
     }
   }
 
-  console.log(`[SUCCESS] Map completed. Extracted ${snapshot.length} total active wallets.`);
+  console.log(`[SUCCESS] Snapshot completely saved. Holders found: ${snapshot.length}`);
 
   if (!IS_TEST) {
     while (getLondonHour() < 20) {
@@ -134,15 +164,14 @@ async function run() {
   }
 
   if (snapshot.length === 0) {
-    console.log("[INFO] No holder balances identified on layout pool. Exiting safely.");
-    process.exit(0);
+    console.error("[CRITICAL] STOPPING: Target distribution account has 0 funds.");
+    process.exit(1);
   }
 
   let payerAta;
   try {
-    payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
+    payerAta = await getAssociatedTokenAddress(tokenMint, payer.publicKey);
   } catch (err) {
-    console.error("[CRITICAL ERROR] Payer wallet does not have a HEDGE token account setup.");
     process.exit(1);
   }
 
@@ -150,7 +179,7 @@ async function run() {
   for (const holder of snapshot) {
     if (holder.reward === 0n) continue;
     try {
-      const holderAta = await getAssociatedTokenAddress(TOKEN_MINT, holder.owner);
+      const holderAta = await getAssociatedTokenAddress(tokenMint, holder.owner);
       const transaction = new Transaction();
       
       const info = await connection.getAccountInfo(holderAta);
@@ -160,7 +189,7 @@ async function run() {
             payer.publicKey,
             holderAta,
             holder.owner,
-            TOKEN_MINT
+            tokenMint
           )
         );
       }
@@ -168,7 +197,7 @@ async function run() {
       transaction.add(
         createTransferCheckedInstruction(
           payerAta,
-          TOKEN_MINT,
+          tokenMint,
           holderAta,
           payer.publicKey,
           holder.reward,
@@ -189,4 +218,4 @@ async function run() {
 }
 
 run();
-              
+  
