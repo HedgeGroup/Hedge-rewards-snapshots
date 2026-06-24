@@ -22,8 +22,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install Solana Libraries
-        run: npm install @solana/web3.js @solana/spl-token dotenv bs58
+      - name: Install Solana and Seed Phrase Libraries
+        run: npm install @solana/web3.js @solana/spl-token dotenv bs58 bip39 ed25519-hd-key
 
       - name: Variables
         run: |
