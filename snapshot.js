@@ -1,4 +1,4 @@
-    const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -9,8 +9,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+const TOKEN_MINT = new PublicKey(Buffer.from('33a921d7b326bf5fbc67b36fdbce2324ca9574d640fae7f53a479893d59a72ad', 'hex'));
+const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from('06ddf6e1d765a193022223334d0aa8c338c3cf0c2d3851b4c6b5413340000000', 'hex'));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -154,3 +154,4 @@ async function run() {
 }
 
 run();
+
