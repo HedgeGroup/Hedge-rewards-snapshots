@@ -1,20 +1,23 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+    const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
 
 const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
-let TOKEN_MINT_STR = process.env.TOKEN_MINT ? process.env.TOKEN_MINT.trim() : '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
+let TOKEN_MINT_STR = process.env.TOKEN_MINT ? process.env.TOKEN_MINT.replace(/[^a-zA-Z0-9]/g, '') : '';
 const IS_TEST = process.env.IS_TEST === 'true';
 
-if (TOKEN_MINT_STR.startsWith('"') || TOKEN_MINT_STR.startsWith("'")) TOKEN_MINT_STR = TOKEN_MINT_STR.slice(1);
-if (TOKEN_MINT_STR.endsWith('"') || TOKEN_MINT_STR.endsWith("'")) TOKEN_MINT_STR = TOKEN_MINT_STR.slice(0, -1);
-TOKEN_MINT_STR = TOKEN_MINT_STR.trim();
+if (!TOKEN_MINT_STR || TOKEN_MINT_STR.length < 32 || TOKEN_MINT_STR.length > 44) {
+  TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
+}
 
-if (PAYER_KEY && (PAYER_KEY.startsWith('"') || PAYER_KEY.startsWith("'"))) PAYER_KEY = PAYER_KEY.slice(1);
-if (PAYER_KEY && (PAYER_KEY.endsWith('"') || PAYER_KEY.endsWith("'"))) PAYER_KEY = PAYER_KEY.slice(0, -1);
-if (PAYER_KEY) PAYER_KEY = PAYER_KEY.trim();
+if (PAYER_KEY) {
+  PAYER_KEY = PAYER_KEY.replace(/[\r\n]/g, '').trim();
+  if (PAYER_KEY.startsWith('"') || PAYER_KEY.startsWith("'")) PAYER_KEY = PAYER_KEY.slice(1);
+  if (PAYER_KEY.endsWith('"') || PAYER_KEY.endsWith("'")) PAYER_KEY = PAYER_KEY.slice(0, -1);
+  PAYER_KEY = PAYER_KEY.trim();
+}
 
 if (!RPC_URL || !PAYER_KEY) {
   console.error("[ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -27,9 +30,15 @@ const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C
 
 let secretKey;
 try {
-  secretKey = PAYER_KEY.startsWith('[') ? Uint8Array.from(JSON.parse(PAYER_KEY)) : bs58.decode(PAYER_KEY);
+  if (PAYER_KEY.startsWith('[')) {
+    const cleanedJson = PAYER_KEY.replace(/[^0-9,\[\]]/g, '');
+    secretKey = Uint8Array.from(JSON.parse(cleanedJson));
+  } else {
+    const cleanedBase58 = PAYER_KEY.replace(/[^a-zA-Z0-9]/g, '');
+    secretKey = bs58.decode(cleanedBase58);
+  }
 } catch (e) {
-  console.error("[ERROR] Invalid PAYER_SECRET_KEY format. Double check your copied secret.");
+  console.error("[ERROR] Invalid PAYER_SECRET_KEY format. Verification failed.");
   process.exit(1);
 }
 const payer = Keypair.fromSecretKey(secretKey);
@@ -141,4 +150,4 @@ async function run() {
 }
 
 run();
-
+  
