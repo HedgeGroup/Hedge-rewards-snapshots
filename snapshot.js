@@ -5,19 +5,23 @@ require('dotenv').config();
 
 const RPC_URL = process.env.RPC_URL;
 const PAYER_KEY = process.env.PAYER_KEY;
-const TOKEN_MINT = new PublicKey(process.env.TOKEN_MINT);
+const TOKEN_MINT_STR = process.env.TOKEN_MINT || '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const IS_TEST = process.env.IS_TEST === 'true';
 
 if (!RPC_URL || !PAYER_KEY) {
+  console.error("[ERROR] Missing RPC_URL or PAYER_PRIVATE_KEY in GitHub Secrets!");
   process.exit(1);
 }
 
 const connection = new Connection(RPC_URL, 'confirmed');
+const TOKEN_MINT = new PublicKey(TOKEN_MINT_STR);
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
 
 let secretKey;
 try {
   secretKey = PAYER_KEY.startsWith('[') ? Uint8Array.from(JSON.parse(PAYER_KEY)) : bs58.decode(PAYER_KEY);
 } catch (e) {
+  console.error("[ERROR] Invalid PAYER_PRIVATE_KEY format. Double check your copied secret.");
   process.exit(1);
 }
 const payer = Keypair.fromSecretKey(secretKey);
@@ -33,36 +37,45 @@ async function sleep(ms) {
 async function run() {
   if (!IS_TEST) {
     const randomDelay = Math.floor(Math.random() * 7200000);
+    console.log(`[INFO] Waiting for scheduled Saturday execution. Delaying for ${(randomDelay/1000/60).toFixed(2)} minutes.`);
     await sleep(randomDelay);
   }
 
+  console.log("[INFO] Scanning blockchain for all token holders...");
   let accounts;
   try {
-    const response = await connection.getTokenLargestAccounts(TOKEN_MINT);
-    accounts = response.value;
+    const parsedAccounts = await connection.getParsedProgramAccounts(
+      TOKEN_PROGRAM_ID,
+      {
+        filters: [
+          { dataSize: 165 },
+          { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
+        ]
+      }
+    );
+    accounts = parsedAccounts;
   } catch (err) {
+    console.error("[ERROR] Free RPC node rate limit hit or request failed:", err.message);
     process.exit(1);
   }
 
   const snapshot = [];
   for (const acc of accounts) {
-    const amount = BigInt(acc.amount);
-    if (amount > 0n) {
-      try {
-        const accInfo = await connection.getParsedAccountInfo(new PublicKey(acc.address));
-        const ownerAddress = accInfo.value.data.parsed.info.owner;
-        snapshot.push({
-          owner: new PublicKey(ownerAddress),
-          reward: (amount * 3n) / 100n
-        });
-        await sleep(150);
-      } catch (e) {
-        continue;
-      }
+    const data = acc.account.data.parsed.info;
+    const amount = BigInt(data.tokenAmount.amount);
+    const owner = data.owner;
+
+    if (amount > 0n && owner !== payer.publicKey.toBase58()) {
+      snapshot.push({
+        owner: new PublicKey(owner),
+        reward: (amount * 3n) / 100n
+      });
     }
   }
+  console.log(`[SUCCESS] Captured ${snapshot.length} total holder accounts.`);
 
   if (!IS_TEST) {
+    console.log("[INFO] Waiting until exactly 20:00 London time for payout...");
     while (getLondonHour() < 20) {
       await sleep(60000);
     }
@@ -72,18 +85,19 @@ async function run() {
   try {
     payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
   } catch (err) {
+    console.error("[ERROR] Your distribution wallet does not have a HEDGE token account setup.");
     process.exit(1);
   }
 
+  console.log("[INFO] Starting automatic payout distributions...");
   for (const holder of snapshot) {
     if (holder.reward === 0n) continue;
     try {
       const holderAta = await getAssociatedTokenAddress(TOKEN_MINT, holder.owner);
       const transaction = new Transaction();
       
-      try {
-        await connection.getAccountInfo(holderAta);
-      } catch (e) {
+      const info = await connection.getAccountInfo(holderAta);
+      if (info === null) {
         transaction.add(
           createAssociatedTokenAccountInstruction(
             payer.publicKey,
@@ -105,13 +119,16 @@ async function run() {
         )
       );
       
-      await connection.sendTransaction(transaction, [payer], { skipPreflight: false, commitment: 'confirmed' });
-      await sleep(250);
+      const sig = await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
+      console.log(`[PAYOUT SUCCESS] Sent reward to ${holder.owner.toBase58()}. Tx: ${sig}`);
+      await sleep(300);
     } catch (txErr) {
-      await sleep(250);
+      console.error(`[PAYOUT FAILED] Distribution failed for wallet ${holder.owner.toBase58()}:`, txErr.message);
+      await sleep(300);
       continue;
     }
   }
+  console.log("[SUCCESS] All reward distributions finalized.");
   process.exit(0);
 }
 
