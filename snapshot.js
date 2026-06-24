@@ -1,7 +1,9 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
+const fs = require('fs');
+const path = require('path');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
 
@@ -9,8 +11,7 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(new Uint8Array([51,169,33,215,179,26,191,95,188,67,179,111,219,206,35,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
-const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,2,34,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
+const TOKEN_MINT = new PublicKey(Uint8Array.from([51,169,33,215,179,26,191,95,188,67,179,111,219,206,23,24,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
 
 if (!RPC_URL || !PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing RPC_URL or PAYER_SECRET_KEY in GitHub Secrets!");
@@ -25,10 +26,6 @@ try {
   const wordCount = cleanedKey.split(/\s+/).length;
 
   if (wordCount >= 12 && wordCount <= 24) {
-    if (!bip39.validateMnemonic(cleanedKey)) {
-      console.error("[CRITICAL ERROR] The 12-word phrase entered is invalid.");
-      process.exit(1);
-    }
     const seed = bip39.mnemonicToSeedSync(cleanedKey);
     const derivedSeed = derivePath("m/44'/501'/0'/0'", seed.toString('hex')).key;
     payer = Keypair.fromSeed(derivedSeed);
@@ -60,48 +57,49 @@ async function sleep(ms) {
 }
 
 async function run() {
-  if (!IS_TEST) {
-    const randomDelay = Math.floor(Math.random() * 7200000);
-    await sleep(randomDelay);
-  }
-
-  console.log(`[INFO] Scanning blockchain for all holders...`);
-  let rawAccounts = [];
-  try {
-    rawAccounts = await connection.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
-      filters: [
-        { dataSize: 165 },
-        { memcmp: { offset: 0, bytes: TOKEN_MINT.toBase58() } }
-      ]
-    });
-  } catch (err) {
-    console.error("[CRITICAL ERROR] Native RPC ledger query failed:", err.message);
+  console.log("[INFO] Reading local holder spreadsheet data...");
+  const csvPath = path.join(__dirname, 'holders.csv');
+  
+  if (!fs.existsSync(csvPath)) {
+    console.error("[CRITICAL ERROR] holders.csv file not found! Please upload a valid holder list.");
     process.exit(1);
   }
 
+  const fileContent = fs.readFileSync(csvPath, 'utf-8');
+  const lines = fileContent.split(/\r?\n/);
   const snapshot = [];
+
   const excludedWallets = [
     payer.publicKey.toBase58(),
-    '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS', 
-    'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'  
+    '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
+    'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
   ];
 
-  for (const record of rawAccounts) {
-    const accountData = record.account.data.parsed.info;
-    const owner = accountData.owner;
-    const amountStr = accountData.tokenAmount.amount;
-    const amount = BigInt(amountStr);
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const parts = line.split(',');
+    if (parts.length < 2) continue;
 
-    if (amount > 0n && owner && !excludedWallets.includes(owner)) {
-      snapshot.push({
-        owner: new PublicKey(owner),
-        reward: (amount * 3n) / 100n,
-        balance: amountStr
-      });
+    const owner = parts[0].trim();
+    const amountStr = parts[1].trim();
+    
+    if (owner && amountStr && !excludedWallets.includes(owner)) {
+      try {
+        const amount = BigInt(amountStr);
+        if (amount > 0n) {
+          snapshot.push({
+            owner: new PublicKey(owner),
+            reward: (amount * 3n) / 100n
+          });
+        }
+      } catch (e) {
+        continue;
+      }
     }
   }
-  
-  console.log(`[SUCCESS] Captured exactly ${snapshot.length} valid HEDGE holder wallets.`);
+
+  console.log(`[SUCCESS] Loaded exactly ${snapshot.length} valid HEDGE holder wallets from spreadsheet.`);
 
   if (!IS_TEST) {
     while (getLondonHour() < 20) {
@@ -110,7 +108,7 @@ async function run() {
   }
 
   if (snapshot.length === 0) {
-    console.log("[INFO] No external wallets detected. Exiting payout run safely.");
+    console.log("[INFO] No external wallets loaded. Exiting payout run safely.");
     process.exit(0);
   }
 
@@ -154,9 +152,9 @@ async function run() {
       
       const txid = await connection.sendTransaction(transaction, [payer], { skipPreflight: true, commitment: 'confirmed' });
       console.log(`[PAYOUT SUCCESS] Sent 3% reward to ${holder.owner.toBase58()}. Tx: ${txid}`);
-      await sleep(350);
+      await sleep(400);
     } catch (txErr) {
-      await sleep(350);
+      await sleep(400);
       continue;
     }
   }
@@ -165,3 +163,4 @@ async function run() {
 }
 
 run();
+      
