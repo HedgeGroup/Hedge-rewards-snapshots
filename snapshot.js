@@ -1,9 +1,10 @@
+
 const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
 const fs = require('fs');
 const csv = require('fast-csv');
 
-const RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com';
+const RPC_ENDPOINT = 'https://helius-rpc.com';
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
 
@@ -109,39 +110,73 @@ async function runSnapshot() {
         await sleep(randomDelay);
     }
 
-    console.log('[START] Connecting directly to token holder indexing node...');
+    console.log('[START] Querying ledger tree for ALL token holding wallets...');
+    
+    let accounts = [];
     try {
-        // Päritakse andmed optimeeritud avaliku Solana indekseerija kaudu, mis ei krahhi
-        const res = await fetch(`https://solscan.io{TOKEN_MINT_ADDRESS}&limit=100`);
-        if (!res.ok) {
-            throw new Error(`Solscan ledger node offline with status ${res.status}`);
+        accounts = await connection.getParsedProgramAccounts(
+            new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+            {
+                filters: [
+                    { dataSize: 165 },
+                    { memcmp: { offset: 0, bytes: TOKEN_MINT_ADDRESS } }
+                ]
+            }
+        );
+    } catch (err) {
+        console.warn('[WARNING] Primary RPC pipeline failed. Activating backup indexer...');
+        try {
+            const res = await fetch(`https://solanatracker.io{TOKEN_MINT_ADDRESS}/holders`);
+            if (res.ok) {
+                const body = await res.json();
+                const trackingHolders = body.holders || [];
+                accounts = trackingHolders.map(h => ({
+                    account: {
+                        data: {
+                            parsed: {
+                                info: {
+                                    owner: h.wallet,
+                                    tokenAmount: { amount: Math.round(parseFloat(h.amount) * Math.pow(10, DECIMALS)).toString() }
+                                }
+                            }
+                        }
+                    }
+                }));
+            }
+        } catch (backupErr) {
+            console.error('[CRITICAL] All pipelines exhausted.');
+            process.exit(1);
         }
-        const body = await res.json();
-        const accounts = body.data || [];
-        
-        console.log(`[SCAN] Map completed. Extracted ${accounts.length} active wallets.`);
-        const snapshotData = [];
-        
-        for (const holder of accounts) {
-            const ownerWallet = holder.address;
-            const currentBalance = parseFloat(holder.amount) / Math.pow(10, DECIMALS);
+    }
 
-            if (currentBalance > 0 && ownerWallet) {
+    console.log(`[SCAN] Map completed. Extracted ${accounts.length} total active wallets.`);
+    const snapshotData = [];
+    
+    for (const account of accounts) {
+        try {
+            if (!account || !account.account || !account.account.data || !account.account.data.parsed) continue;
+            const info = account.account.data.parsed.info;
+            if (!info || !info.tokenAmount) continue;
+            
+            const ownerWallet = info.owner;
+            const rawBalance = BigInt(info.tokenAmount.amount);
+
+            if (rawBalance > 0n && ownerWallet) {
+                const currentBalance = Number(rawBalance) / Math.pow(10, DECIMALS);
                 const rewardAmount = currentBalance * 0.03;
                 snapshotData.push({ Address: ownerWallet, Amount: rewardAmount.toFixed(DECIMALS) });
             }
+        } catch (e) {
+            continue;
         }
-
-        const csvStream = csv.format({ headers: true });
-        const writableStream = fs.createWriteStream(fileName);
-        csvStream.pipe(writableStream);
-        snapshotData.forEach(row => csvStream.write(row));
-        csvStream.end();
-        console.log(`[SUCCESS] Snapshot completely saved to ${fileName}`);
-    } catch (err) {
-        console.error('[CRITICAL] Native indexer pipeline failed:', err.message);
-        process.exit(1);
     }
+
+    const csvStream = csv.format({ headers: true });
+    const writableStream = fs.createWriteStream(fileName);
+    csvStream.pipe(writableStream);
+    snapshotData.forEach(row => csvStream.write(row));
+    csvStream.end();
+    console.log(`[SUCCESS] Snapshot completely saved to ${fileName}`);
 }
 
 runSnapshot().catch(err => {
