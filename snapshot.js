@@ -1,6 +1,10 @@
+
+const { Connection, PublicKey } = require('@solana/web3.js');
 const fs = require('fs');
 const csv = require('fast-csv');
 
+// Kasutame optimeeritud ja töökindlat QuickNode otselinki masspäringute jaoks
+const RPC_ENDPOINT = 'https://quiknode.pro';
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
 
@@ -22,33 +26,52 @@ async function runSnapshot() {
         await sleep(randomDelay);
     }
 
-    console.log('[START] Downloading all token holders via free tracking infrastructure...');
+    console.log('[START] Downloading EVERY single token holder from the ledger...');
     
     try {
-        const response = await fetch(`https://solanatracker.io{TOKEN_MINT_ADDRESS}/holders`);
-        if (!response.ok) {
-            throw new Error(`Tracking network responded with status: ${response.status}`);
-        }
+        const connection = new Connection(RPC_ENDPOINT, 'confirmed');
+        const accounts = await connection.getParsedProgramAccounts(
+            new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+            {
+                filters: [
+                    { dataSize: 165 },
+                    { memcmp: { offset: 0, bytes: TOKEN_MINT_ADDRESS } }
+                ]
+            }
+        );
         
-        const data = await response.json();
-        const holders = data.holders || [];
-        console.log(`[SCAN] Successfully extracted ${holders.length} active wallet addresses.`);
+        console.log(`[SCAN] Successfully found ${accounts.length} total active wallets.`);
 
         const snapshotData = [];
         const now = new Date();
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         
-        for (const holder of holders) {
-            const ownerWallet = holder.wallet;
-            const currentBalance = parseFloat(holder.amount);
+        for (const account of accounts) {
+            try {
+                if (!account || !account.account || !account.account.data || !account.account.data.parsed) {
+                    continue;
+                }
 
-            if (currentBalance > 0 && ownerWallet) {
-                const rewardAmount = currentBalance * 0.03;
+                const info = account.account.data.parsed.info;
+                if (!info || !info.tokenAmount) {
+                    continue;
+                }
 
-                snapshotData.push({
-                    Address: ownerWallet,
-                    Amount: rewardAmount.toFixed(DECIMALS)
-                });
+                const ownerWallet = info.owner;
+                const rawBalance = BigInt(info.tokenAmount.amount);
+
+                // Loeb sisse KÕIK rahakotid, mille saldo on suurem kui null
+                if (rawBalance > 0n && ownerWallet) {
+                    const currentBalance = Number(rawBalance) / Math.pow(10, DECIMALS);
+                    const rewardAmount = currentBalance * 0.03;
+
+                    snapshotData.push({
+                        Address: ownerWallet,
+                        Amount: rewardAmount.toFixed(DECIMALS)
+                    });
+                }
+            } catch (e) {
+                continue;
             }
         }
 
@@ -63,7 +86,7 @@ async function runSnapshot() {
         console.log(`[SUCCESS] Snapshot completely saved to ${fileName}`);
 
     } catch (err) {
-        console.error('[CRITICAL ERROR] Failed to fetch data from tracking network:', err.message);
+        console.error('[CRITICAL ERROR] High-performance pipeline failed:', err.message);
         process.exit(1);
     }
 }
