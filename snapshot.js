@@ -1,4 +1,4 @@
-  const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
@@ -7,8 +7,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey(Buffer.from('33a921d7b326bf5fbc67b36fdbce2324ca9574d640fae7f53a479893d59a72ad', 'hex'));
-const TOKEN_PROGRAM_ID = new PublicKey(Buffer.from('06ddf6e1d765a193022223334d0aa8c338c3cf0c2d3851b4c6b5413340000000', 'hex'));
+const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
 
 if (!RPC_URL) {
   console.error("[CRITICAL ERROR] RPC_URL is empty inside your GitHub Secrets!");
@@ -20,22 +20,46 @@ if (!PAYER_SECRET_KEY) {
   process.exit(1);
 }
 
-const cleanedBase58 = PAYER_SECRET_KEY.replace(/[^a-zA-Z0-9]/g, '').trim();
-let secretKey;
+let secretKey = null;
 try {
-  secretKey = bs58.decode(cleanedBase58);
+  let cleaned = PAYER_SECRET_KEY.replace(/[\r\n\t]/g, '').trim();
+  if (cleaned.startsWith('"') || cleaned.startsWith("'")) cleaned = cleaned.slice(1);
+  if (cleaned.endsWith('"') || cleaned.endsWith("'")) cleaned = cleaned.slice(0, -1);
+  cleaned = cleaned.trim();
+
+  if (cleaned.startsWith('[') || cleaned.includes(',')) {
+    const jsonNumbers = cleaned.replace(/[^0-9,]/g, '');
+    secretKey = Uint8Array.from(jsonNumbers.split(',').map(Number));
+  } else if (/^[0-9a-fA-F]+$/.test(cleaned)) {
+    secretKey = Uint8Array.from(Buffer.from(cleaned, 'hex'));
+  } else {
+    try {
+      secretKey = bs58.decode(cleaned);
+    } catch (b58Err) {
+      if (/^[0-9a-fA-F]+$/.test(cleaned.replace(/[^0-9a-fA-F]/g, ''))) {
+        secretKey = Uint8Array.from(Buffer.from(cleaned.replace(/[^0-9a-fA-F]/g, ''), 'hex'));
+      } else {
+        secretKey = Uint8Array.from(Buffer.from(cleaned, 'utf-8').slice(0, 64));
+      }
+    }
+  }
 } catch (e) {
-  console.error("[CRITICAL ERROR] Failed to decode Base58 key from GitHub Secrets.");
-  process.exit(1);
+  secretKey = null;
 }
 
-if (secretKey.length !== 64) {
-  console.error(`[CRITICAL ERROR] Decoded key length is invalid! Got ${secretKey.length} bytes, expected exactly 64.`);
+if (!secretKey || secretKey.length !== 64) {
+  console.error("[CRITICAL ERROR] Unable to parse your Hex private key. Verify that no characters were clipped off when pasting.");
   process.exit(1);
 }
 
 const connection = new Connection(RPC_URL, 'confirmed');
-const payer = Keypair.fromSecretKey(secretKey);
+let payer;
+try {
+  payer = Keypair.fromSecretKey(secretKey);
+} catch (e) {
+  console.error("[CRITICAL ERROR] Keypair generation failed. Your secret key format could not be verified by Solana.");
+  process.exit(1);
+}
 
 function getLondonHour() {
   return parseInt(new Date().toLocaleString("en-US", { timeZone: "Europe/London", hour: "2-digit", hour12: false }), 10);
@@ -140,5 +164,6 @@ async function run() {
 }
 
 run();
+
 
         
