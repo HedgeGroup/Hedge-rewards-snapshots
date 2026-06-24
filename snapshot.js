@@ -3,7 +3,9 @@ const fs = require('fs');
 const csv = require('fast-csv');
 
 const RPC_ENDPOINTS = [
-    'https://api.mainnet-beta.solana.com'
+    'https://llamanodes.com',
+    'https://mainnet-triton.one',
+    'https://solana.com'
 ];
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
@@ -15,6 +17,7 @@ function sleep(ms) {
 async function fetchAccounts() {
     for (const url of RPC_ENDPOINTS) {
         try {
+            console.log(`[SCAN] Connecting to Solana ledger via: ${url}`);
             const connection = new Connection(url, {
                 commitment: 'confirmed',
                 confirmTransactionInitialTimeout: 60000
@@ -30,10 +33,10 @@ async function fetchAccounts() {
             );
             return accounts;
         } catch (e) {
-            console.error(`RPC failed for ${url}, trying next...`);
+            console.error(`[WARNING] RPC failed for ${url}. Switching endpoints immediately...`);
         }
     }
-    throw new Error('All RPC endpoints failed under pressure.');
+    throw new Error('All high-performance RPC endpoints failed under network pressure.');
 }
 
 async function runSnapshot() {
@@ -102,4 +105,5 @@ runSnapshot().catch(err => {
     console.error(err);
     process.exit(1);
 });
+
 
