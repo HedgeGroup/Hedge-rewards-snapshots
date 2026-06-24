@@ -1,10 +1,15 @@
 const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
 const fs = require('fs');
-const https = require('https');
 const csv = require('fast-csv');
 
-const RPC_ENDPOINT = 'https://solana.com';
+// Automaatsed varu-andmesõlmed: skript testib neid ükshaaval ülikiiresti
+const RPC_ENDPOINTS = [
+    'https://helius-rpc.com',
+    'https://mainnet-triton.one',
+    'https://api.mainnet-beta.solana.com'
+];
+
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
 
@@ -39,31 +44,39 @@ function convertBase58ToUint8Array(base58String) {
     return new Uint8Array(bytes.reverse());
 }
 
-function fetchHoldersBackup() {
-    return new Promise((resolve, reject) => {
-        const url = `https://solanatracker.io{TOKEN_MINT_ADDRESS}/holders`;
-        https.get(url, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
-            res.on('end', () => {
-                try {
-                    const json = JSON.parse(data);
-                    resolve(json.holders || []);
-                } catch (e) {
-                    reject(new Error("Failed to parse network ledger JSON"));
-                }
+// See funktsioon proovib kõiki ühendusi reas, kuni üks tagastab puhta JSON-i
+async function fetchAccountsWithFallback() {
+    for (const url of RPC_ENDPOINTS) {
+        try {
+            console.log(`[SCAN] Attempting data sync via endpoint: ${url}`);
+            const connection = new Connection(url, {
+                commitment: 'confirmed',
+                confirmTransactionInitialTimeout: 30000
             });
-        }).on('error', (err) => {
-            reject(err);
-        });
-    });
+            
+            const accounts = await connection.getProgramAccounts(
+                new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+                {
+                    filters: [
+                        { dataSize: 165 },
+                        { memcmp: { offset: 0, bytes: TOKEN_MINT_ADDRESS } }
+                    ]
+                }
+            );
+            
+            // Kui päring andis tulemuse ja ei krahhinud, tagastame ühenduse ja andmed
+            return { accounts, connection };
+        } catch (e) {
+            console.warn(`[WARNING] Endpoint ${url} threw an error or rate-limit. Switching to next fallback instantly...`);
+        }
+    }
+    throw new Error('All primary and fallback RPC nodes failed under massive network pressure.');
 }
 
 async function runSnapshot() {
     const isManualTest = process.argv.includes('--test');
     const isPayoutMode = process.argv.includes('--payout');
     
-    const connection = new Connection(RPC_ENDPOINT, 'confirmed');
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const fileName = `snapshot_${dateStr}.csv`;
@@ -88,6 +101,8 @@ async function runSnapshot() {
             process.exit(1);
         }
 
+        // Teeme ka kontrolli ajal kiire ühenduse testi
+        const { connection } = await fetchAccountsWithFallback();
         const mintPublicKey = new PublicKey(TOKEN_MINT_ADDRESS);
         const sourceATA = await getAssociatedTokenAddress(mintPublicKey, payerKeypair.publicKey);
         const recipients = [];
@@ -130,17 +145,25 @@ async function runSnapshot() {
         await sleep(randomDelay);
     }
 
-    console.log('[START] Connecting to decentralized holder indexing pipeline...');
+    console.log('[START] Querying infrastructure ledger tree for ALL wallets...');
     try {
-        const holders = await fetchHoldersBackup();
-        console.log(`[SCAN] Map completed. Extracted ${holders.length} total active wallets.`);
+        const { accounts } = await fetchAccountsWithFallback();
         
+        console.log(`[SCAN] Map completed. Extracted ${accounts.length} total active wallets.`);
         const snapshotData = [];
-        for (const holder of holders) {
-            const ownerWallet = holder.wallet;
-            const currentBalance = parseFloat(holder.amount);
+        
+        for (const account of accounts) {
+            if (!account || !account.account || !account.account.data) continue;
+            
+            const data = account.account.data;
+            if (data.length < 64) continue;
+            
+            // Loeb mälust otse saldod ja omaniku pubkey bitid
+            const rawAmount = data.readBigUInt64LE(64);
+            const ownerWallet = new PublicKey(data.slice(32, 64)).toBase58();
 
-            if (currentBalance > 0 && ownerWallet) {
+            if (rawAmount > 0n && ownerWallet) {
+                const currentBalance = Number(rawAmount) / Math.pow(10, DECIMALS);
                 const rewardAmount = currentBalance * 0.03;
                 snapshotData.push({ Address: ownerWallet, Amount: rewardAmount.toFixed(DECIMALS) });
             }
@@ -153,7 +176,7 @@ async function runSnapshot() {
         csvStream.end();
         console.log(`[SUCCESS] Snapshot completely saved to ${fileName}`);
     } catch (err) {
-        console.error('[CRITICAL] Distribution ledger sync failed:', err.message);
+        console.error('[CRITICAL] Failover pipeline exhausted. All nodes failed:', err.message);
         process.exit(1);
     }
 }
@@ -162,5 +185,3 @@ runSnapshot().catch(err => {
     console.error(err);
     process.exit(1);
 });
-
-            
