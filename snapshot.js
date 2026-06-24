@@ -71,7 +71,9 @@ async function run() {
         )
       );
       await connection.sendTransaction(transaction, [payer], { skipPreflight: false, commitment: 'confirmed' });
+      await sleep(200);
     } catch (txErr) {
+      await sleep(200);
       continue;
     }
   }
