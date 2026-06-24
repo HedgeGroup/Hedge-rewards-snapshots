@@ -1,11 +1,12 @@
+
+
 const { Connection, PublicKey } = require('@solana/web3.js');
 const fs = require('fs');
 const csv = require('fast-csv');
 
 const RPC_ENDPOINTS = [
-    'https://api.mainnet-beta.solana.com',
-    'https://solana-mainnet.rpc.llamanodes.com',
-    'https://api.mainnet-triton.one'
+    'https://mainnet-triton.one',
+    'https://solana.com'
 ];
 const TOKEN_MINT_ADDRESS = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 const DECIMALS = 6; 
@@ -105,6 +106,5 @@ runSnapshot().catch(err => {
     console.error(err);
     process.exit(1);
 });
-
 
 
