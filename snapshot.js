@@ -7,8 +7,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 let PAYER_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+const TOKEN_MINT = new PublicKey(new Uint8Array([52,194,52,246,134,81,38,154,233,149,36,252,247,159,165,119,103,111,107,178,165,178,92,49,24,244,115,190,140,240,65,49]));
+const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,217,203,225,70,206,235,121,172,28,180,133,237,95,91,55,145,58,140,245,133,126,255,0,169]));
 
 if (!RPC_URL) {
   console.error("[CRITICAL ERROR] RPC_URL is empty inside your GitHub Secrets!");
@@ -154,3 +154,4 @@ async function run() {
 }
 
 run();
+
