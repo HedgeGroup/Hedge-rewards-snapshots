@@ -1,36 +1,95 @@
-name: HEDGE Reward System
+const { Connection, PublicKey, Keypair, Transaction } = require('@solana/web3.js');
+const { createTransferCheckedInstruction, getAssociatedTokenAddress } = require('@solana/spl-token');
+const bs58 = require('bs58');
+require('dotenv').config();
 
-on:
-  workflow_dispatch:
-    inputs:
-      test_mode:
-        required: true
-        default: 'true'
-  schedule:
-    - cron: '0 15 * * 6'
+const RPC_URL = process.env.RPC_URL;
+const PAYER_KEY = process.env.PAYER_KEY;
+const TOKEN_MINT = new PublicKey(process.env.TOKEN_MINT);
+const IS_TEST = process.env.IS_TEST === 'true';
 
-jobs:
-  hedge-rewards:
-    runs-on: ubuntu-latest
+if (!RPC_URL || !PAYER_KEY) {
+  process.exit(1);
+}
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+const connection = new Connection(RPC_URL, 'confirmed');
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
+let secretKey;
+try {
+  secretKey = PAYER_KEY.startsWith('[') ? Uint8Array.from(JSON.parse(PAYER_KEY)) : bs58.decode(PAYER_KEY);
+} catch (e) {
+  process.exit(1);
+}
+const payer = Keypair.fromSecretKey(secretKey);
 
-      - name: Install Solana Libraries
-        run: npm install @solana/web3.js @solana/spl-token dotenv bs58
+function getLondonHour() {
+  return parseInt(new Date().toLocaleString("en-US", { timeZone: "Europe/London", hour: "2-digit", hour12: false }), 10);
+}
 
-      - name: Variables
-        run: |
-          echo "RPC_URL=${{ secrets.SOLANA_RPC_URL }}" >> .env
-          echo "PAYER_KEY=${{ secrets.PAYER_PRIVATE_KEY }}" >> .env
-          echo "TOKEN_MINT=4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump" >> .env
-          echo "IS_TEST=${{ github.event.inputs.test_mode || 'false' }}" >> .env
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-      - name: Run Reward System
-        run: node snapshot.js
+async function run() {
+  if (!IS_TEST) {
+    const randomDelay = Math.floor(Math.random() * 7200000);
+    await sleep(randomDelay);
+  }
+
+  let accounts;
+  try {
+    const response = await connection.getTokenLargestAccounts(TOKEN_MINT);
+    accounts = response.value;
+  } catch (err) {
+    process.exit(1);
+  }
+
+  const snapshot = [];
+  for (const acc of accounts) {
+    const amount = BigInt(acc.amount);
+    if (amount > 0n) {
+      snapshot.push({
+        address: acc.address.toString(),
+        reward: (amount * 3n) / 100n
+      });
+    }
+  }
+
+  if (!IS_TEST) {
+    while (getLondonHour() < 20) {
+      await sleep(60000);
+    }
+  }
+
+  let payerAta;
+  try {
+    payerAta = await getAssociatedTokenAddress(TOKEN_MINT, payer.publicKey);
+  } catch (err) {
+    process.exit(1);
+  }
+
+  for (const holder of snapshot) {
+    if (holder.reward === 0n) continue;
+    try {
+      const holderPubkey = new PublicKey(holder.address);
+      const transaction = new Transaction().add(
+        createTransferCheckedInstruction(
+          payerAta,
+          TOKEN_MINT,
+          holderPubkey,
+          payer.publicKey,
+          holder.reward,
+          9
+        )
+      );
+      await connection.sendTransaction(transaction, [payer], { skipPreflight: false, commitment: 'confirmed' });
+      await sleep(200);
+    } catch (txErr) {
+      await sleep(200);
+      continue;
+    }
+  }
+  process.exit(0);
+}
+
+run();
