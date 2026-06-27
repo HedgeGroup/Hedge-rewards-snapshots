@@ -49,7 +49,7 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchTokenAccountsH wallets(rpcUrl, mintStr) {
+async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
   let page = 1;
   let allOwners = [];
   while (true) {
@@ -90,7 +90,7 @@ async function run() {
     httpsAgent: httpsAgent
   });
   
-  const holdersList = await fetchTokenAccountsH wallets(MAIN_RPC, TOKEN_MINT_STR);
+  const holdersList = await fetchTokenAccountsHelius(MAIN_RPC, TOKEN_MINT_STR);
   const snapshot = [];
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   const excludedWallets = [
@@ -184,4 +184,4 @@ async function run() {
 }
 
 run();
-    
+      
