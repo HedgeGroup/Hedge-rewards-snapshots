@@ -23,7 +23,7 @@ jobs:
           node-version: '24'
 
       - name: Install Solana and Seed Phrase Libraries
-        run: npm install @solana/web3.js @solana/spl-token dotenv bs58 bip39 ed25519-hd-key
+        run: npm install @solana/web3.js @solana/spl-token dotenv bs58 bip39 ed25519-hd-key node-fetch@2
 
       - name: Variables
         run: |
@@ -32,4 +32,4 @@ jobs:
           echo "IS_TEST=${{ github.event.inputs.test_mode || 'false' }}" >> .env
 
       - name: Run Reward System
-        run: node snapshot.js
+        run: NODE_OPTIONS="--no-addons" node snapshot.js
