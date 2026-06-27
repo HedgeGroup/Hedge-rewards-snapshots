@@ -7,8 +7,8 @@ require('dotenv').config();
 
 const fetch = require('node-fetch');
 
-const MAIN_RPC = "https://mainnet.helius-rpc.com";
-const HELIUS_KEY = "6aed6bb2-f704-4c22-a06f-45cda681f369";
+// PARANDUS: Kasutame ametlikku Heliuse otseaadressi, mis ei lõhu Solana veebiklienti ära
+const MAIN_RPC = "https://helius.xyz";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 
@@ -55,10 +55,7 @@ async function sleep(ms) {
 async function run() {
   const connection = new Connection(MAIN_RPC, {
     commitment: 'confirmed',
-    fetch: fetch,
-    httpHeaders: {
-      "Authorization": `Bearer ${HELIUS_KEY}`
-    }
+    fetch: fetch
   });
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   
@@ -134,3 +131,6 @@ async function run() {
 }
 
 run();
+
+      
+      
