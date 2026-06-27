@@ -47,7 +47,7 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
+async function fetchTokenAccountsDAS(rpcUrl, mintStr) {
   let page = 1;
   let allOwners = [];
   while (true) {
@@ -57,9 +57,13 @@ async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: 'payout-scan',
-          method: 'getTokenAccounts',
-          params: { mint: mintStr, page: page, limit: 1000, options: { showZeroBalance: false } }
+          id: 'payout-das-scan',
+          method: 'getTokenAccountsByMint',
+          params: {
+            mint: mintStr,
+            page: page,
+            limit: 1000
+          }
         })
       });
       const resData = await response.json();
@@ -67,11 +71,8 @@ async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
         break;
       }
       for (const acc of resData.result.token_accounts) {
-        // PARANDUS: Heliuse API-st loetakse omanikku acc.account.owner kaudu
-        const owner = acc.account ? acc.account.owner : acc.owner;
-        const amount = acc.account ? acc.account.amount : acc.amount;
-        if (owner && amount) {
-          allOwners.push({ owner: owner, amount: amount });
+        if (acc.owner && acc.amount && BigInt(acc.amount) > 0n) {
+          allOwners.push({ owner: acc.owner, amount: acc.amount });
         }
       }
       page++;
@@ -84,13 +85,13 @@ async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
 }
 
 async function run() {
-  console.log(`[SCAN] Loading token holders using Helius RPC API...`);
+  console.log(`[SCAN] Loading token holders using Helius DAS API...`);
   const connection = new Connection(MAIN_RPC, {
     commitment: 'confirmed',
     httpsAgent: httpsAgent
   });
   
-  const holdersList = await fetchTokenAccountsHelius(MAIN_RPC, TOKEN_MINT_STR);
+  const holdersList = await fetchTokenAccountsDAS(MAIN_RPC, TOKEN_MINT_STR);
   const snapshot = [];
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   
@@ -184,5 +185,5 @@ async function run() {
 }
 
 run();
-            
-  
+      
+      
