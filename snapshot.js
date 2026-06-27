@@ -1,13 +1,11 @@
-    const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+          const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
 
-const http = require('http');
 const https = require('https');
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 25 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 25 });
 
 const MAIN_RPC = "https://helius-rpc.com";
@@ -86,7 +84,6 @@ async function run() {
   console.log(`[SCAN] Loading token holders using Helius RPC API...`);
   const connection = new Connection(MAIN_RPC, {
     commitment: 'confirmed',
-    httpAgent: httpAgent,
     httpsAgent: httpsAgent
   });
   
@@ -184,4 +181,3 @@ async function run() {
 }
 
 run();
-      
