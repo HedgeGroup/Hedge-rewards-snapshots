@@ -68,7 +68,7 @@ async function run() {
     process.exit(1);
   }
 
-  console.log("[INFO] Initiating automatic verified reward distribution...");
+  console.log("[INFO] Initiating automatic verified reward distribution... ");
   for (const entry of FIXED_HOLDERS) {
     const holderOwner = new PublicKey(entry.owner);
     const holderReward = BigInt(entry.reward);
