@@ -7,7 +7,6 @@ require('dotenv').config();
 
 const fetch = require('node-fetch');
 
-const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 
@@ -51,8 +50,8 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function getAccountInfoCustom(rpcUrl, accountPublicKey) {
-  const response = await fetch(rpcUrl, {
+async function getAccountInfoCustom(accountPublicKey) {
+  const response = await fetch("https://helius-rpc.com", {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -67,8 +66,8 @@ async function getAccountInfoCustom(rpcUrl, accountPublicKey) {
   return json.result ? json.result.value : null;
 }
 
-async function getLatestBlockhashCustom(rpcUrl) {
-  const response = await fetch(rpcUrl, {
+async function getLatestBlockhashCustom() {
+  const response = await fetch("https://helius-rpc.com", {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -83,8 +82,8 @@ async function getLatestBlockhashCustom(rpcUrl) {
   return json.result.value;
 }
 
-async function sendTransactionCustom(rpcUrl, base64Tx) {
-  const response = await fetch(rpcUrl, {
+async function sendTransactionCustom(base64Tx) {
+  const response = await fetch("https://helius-rpc.com", {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -123,7 +122,7 @@ async function run() {
       
       transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
-      const info = await getAccountInfoCustom(MAIN_RPC, holderAta);
+      const info = await getAccountInfoCustom(holderAta);
       if (info === null) {
         transaction.add(
           createAssociatedTokenAccountInstruction(
@@ -146,14 +145,14 @@ async function run() {
         )
       );
       
-      const blockhashData = await getLatestBlockhashCustom(MAIN_RPC);
+      const blockhashData = await getLatestBlockhashCustom();
       transaction.recentBlockhash = blockhashData.blockhash;
       transaction.feePayer = payer.publicKey;
       
       transaction.sign(payer);
       const serializedTx = transaction.serialize().toString('base64');
       
-      const txid = await sendTransactionCustom(MAIN_RPC, serializedTx);
+      const txid = await sendTransactionCustom(serializedTx);
 
       console.log(`[REAL SUCCESS] Delivered reward to ${holderOwner.toBase58()}. Tx: ${txid}`);
       await sleep(1500);
@@ -168,6 +167,4 @@ async function run() {
 
 run();
 
-
-      
-      
+          
