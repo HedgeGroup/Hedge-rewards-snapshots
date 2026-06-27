@@ -7,8 +7,7 @@ require('dotenv').config();
 
 const fetch = require('node-fetch');
 
-// PARANDUS: Kasutame ametlikku Heliuse otseaadressi, mis ei lõhu Solana veebiklienti ära
-const MAIN_RPC = "https://helius.xyz";
+const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 
@@ -52,14 +51,58 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function run() {
-  const connection = new Connection(MAIN_RPC, {
-    commitment: 'confirmed',
-    fetch: fetch
+async function getAccountInfoCustom(rpcUrl, accountPublicKey) {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'get-info',
+      method: 'getAccountInfo',
+      params: [accountPublicKey.toBase58(), { encoding: 'base64', commitment: 'confirmed' }]
+    })
   });
+  const json = await response.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result ? json.result.value : null;
+}
+
+async function getLatestBlockhashCustom(rpcUrl) {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'get-hash',
+      method: 'getLatestBlockhash',
+      params: [{ commitment: 'confirmed' }]
+    })
+  });
+  const json = await response.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result.value;
+}
+
+async function sendTransactionCustom(rpcUrl, base64Tx) {
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'send-tx',
+      method: 'sendTransaction',
+      params: [base64Tx, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed' }]
+    })
+  });
+  const json = await response.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result;
+}
+
+async function run() {
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
-  
   console.log(`[SUCCESS] Fixed snapshot loaded. Total targets to process: ${FIXED_HOLDERS.length}`);
+  console.log("[INFO] Initiating automatic verified reward distribution... ");
 
   let payerAta;
   try {
@@ -69,7 +112,6 @@ async function run() {
     process.exit(1);
   }
 
-  console.log("[INFO] Initiating automatic verified reward distribution... ");
   for (const entry of FIXED_HOLDERS) {
     const holderOwner = new PublicKey(entry.owner);
     const holderReward = BigInt(entry.reward);
@@ -81,7 +123,7 @@ async function run() {
       
       transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
-      const info = await connection.getAccountInfo(holderAta);
+      const info = await getAccountInfoCustom(MAIN_RPC, holderAta);
       if (info === null) {
         transaction.add(
           createAssociatedTokenAccountInstruction(
@@ -104,26 +146,20 @@ async function run() {
         )
       );
       
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-      transaction.recentBlockhash = blockhash;
+      const blockhashData = await getLatestBlockhashCustom(MAIN_RPC);
+      transaction.recentBlockhash = blockhashData.blockhash;
       transaction.feePayer = payer.publicKey;
       
-      const txid = await connection.sendTransaction(transaction, [payer], { 
-        skipPreflight: false, 
-        commitment: 'confirmed' 
-      });
+      transaction.sign(payer);
+      const serializedTx = transaction.serialize().toString('base64');
       
-      await connection.confirmTransaction({
-        signature: txid,
-        blockhash: blockhash,
-        lastValidBlockHeight: lastValidBlockHeight
-      }, 'confirmed');
+      const txid = await sendTransactionCustom(MAIN_RPC, serializedTx);
 
       console.log(`[REAL SUCCESS] Delivered reward to ${holderOwner.toBase58()}. Tx: ${txid}`);
-      await sleep(1000);
+      await sleep(1500);
     } catch (txErr) {
       console.error(`[FAILED] Target ${holderOwner.toBase58()} failed! Reason: ${txErr.message}`);
-      await sleep(1000);
+      await sleep(1500);
     }
   }
   console.log("[SUCCESS] Process complete.");
@@ -131,6 +167,7 @@ async function run() {
 }
 
 run();
+
 
       
       
