@@ -1,12 +1,9 @@
-    const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+   const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
-
-const https = require('https');
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 25 });
 
 const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
@@ -47,65 +44,43 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchTokenAccountsDAS(rpcUrl, mintStr) {
-  let page = 1;
-  let allOwners = [];
-  while (true) {
-    try {
-      const response = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'payout-das-scan',
-          method: 'getTokenAccountsByMint',
-          params: {
-            mint: mintStr,
-            page: page,
-            limit: 1000
-          }
-        })
-      });
-      const resData = await response.json();
-      if (!resData.result || !resData.result.token_accounts || resData.result.token_accounts.length === 0) {
-        break;
-      }
-      for (const acc of resData.result.token_accounts) {
-        if (acc.owner && acc.amount && BigInt(acc.amount) > 0n) {
-          allOwners.push({ owner: acc.owner, amount: acc.amount });
-        }
-      }
-      page++;
-      await sleep(200);
-    } catch (err) {
-      break;
-    }
-  }
-  return allOwners;
-}
-
 async function run() {
-  console.log(`[SCAN] Loading token holders using Helius DAS API...`);
-  const connection = new Connection(MAIN_RPC, {
-    commitment: 'confirmed',
-    httpsAgent: httpsAgent
-  });
+  console.log(`[SCAN] Scanning Solana blockchain via Helius Node...`);
+  const connection = new Connection(MAIN_RPC, 'confirmed');
   
-  const holdersList = await fetchTokenAccountsDAS(MAIN_RPC, TOKEN_MINT_STR);
-  const snapshot = [];
+  const tokenProgramId = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   
+  let accounts;
+  try {
+    accounts = await connection.getProgramAccounts(tokenProgramId, {
+      commitment: 'confirmed',
+      encoding: 'base64',
+      filters: [
+        { dataSize: 165 },
+        { memcmp: { offset: 0, bytes: tokenMint.toBase58() } }
+      ]
+    });
+  } catch (scanErr) {
+    console.error(`[CRITICAL] Blockchain scan failed: ${scanErr.message}`);
+    process.exit(1);
+  }
+
+  const snapshot = [];
   const excludedWallets = [
+    payer.publicKey.toBase58(),
     '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
     'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
   ];
 
-  for (const record of holdersList) {
-    const amount = BigInt(record.amount);
-    const owner = record.owner;
-    if (amount > 0n && owner && !excludedWallets.includes(owner)) {
+  for (const record of accounts) {
+    const dataBuffer = record.account.data;
+    const amount = dataBuffer.readBigUInt64LE(64);
+    const ownerStr = bs58.encode(dataBuffer.slice(32, 64));
+    
+    if (amount > 0n && ownerStr && !excludedWallets.includes(ownerStr)) {
       snapshot.push({
-        owner: new PublicKey(owner),
+        owner: new PublicKey(ownerStr),
         reward: (amount * 3n) / 100n
       });
     }
@@ -174,10 +149,10 @@ async function run() {
       }, 'confirmed');
 
       console.log(`[REAL SUCCESS] Delivered 3% to ${holder.owner.toBase58()}. Tx: ${txid}`);
-      await sleep(1200);
+      await sleep(1000);
     } catch (txErr) {
       console.error(`[FAILED] Target ${holder.owner.toBase58()} failed! Reason: ${txErr.message}`);
-      await sleep(1200);
+      await sleep(1000);
     }
   }
   console.log("[SUCCESS] Process complete.");
@@ -185,5 +160,5 @@ async function run() {
 }
 
 run();
-      
+       
       
