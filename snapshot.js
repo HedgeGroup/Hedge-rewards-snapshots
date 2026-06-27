@@ -1,4 +1,4 @@
-   const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -8,6 +8,13 @@ require('dotenv').config();
 const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
+
+// --- HOIDJATE JA SUMMADE NIMEKIRI ---
+// Lisa siia aadresse juurde, eraldades kirjed komadega.
+const FIXED_HOLDERS = [
+  { owner: "CgqDnm3YLPUGBoDy3PGTzF7gEmpXNnaBFc4o83VMBaXd", reward: "1000000000" },
+  { owner: "FtHhkad3SAW3pyLgLG522urGGQnJDw4Ydtgr2ta9Ep5j", reward: "5000000000" }
+];
 
 if (!PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY!");
@@ -45,53 +52,10 @@ async function sleep(ms) {
 }
 
 async function run() {
-  console.log(`[SCAN] Scanning Solana blockchain via Helius Node...`);
   const connection = new Connection(MAIN_RPC, 'confirmed');
-  
-  const tokenProgramId = new PublicKey('TokenkegQfeZyiNw56KuPNas3ndOaahv8KW3Rw5C9m');
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   
-  let accounts;
-  try {
-    accounts = await connection.getProgramAccounts(tokenProgramId, {
-      commitment: 'confirmed',
-      encoding: 'base64',
-      filters: [
-        { dataSize: 165 },
-        { memcmp: { offset: 0, bytes: tokenMint.toBase58() } }
-      ]
-    });
-  } catch (scanErr) {
-    console.error(`[CRITICAL] Blockchain scan failed: ${scanErr.message}`);
-    process.exit(1);
-  }
-
-  const snapshot = [];
-  const excludedWallets = [
-    payer.publicKey.toBase58(),
-    '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
-    'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
-  ];
-
-  for (const record of accounts) {
-    const dataBuffer = record.account.data;
-    const amount = dataBuffer.readBigUInt64LE(64);
-    const ownerStr = bs58.encode(dataBuffer.slice(32, 64));
-    
-    if (amount > 0n && ownerStr && !excludedWallets.includes(ownerStr)) {
-      snapshot.push({
-        owner: new PublicKey(ownerStr),
-        reward: (amount * 3n) / 100n
-      });
-    }
-  }
-
-  console.log(`[SUCCESS] Snapshot saved. Holders found: ${snapshot.length}`);
-
-  if (snapshot.length === 0) {
-    console.error("[CRITICAL] STOPPING: 0 active token holders found.");
-    process.exit(1);
-  }
+  console.log(`[SUCCESS] Fixed snapshot loaded. Total targets to process: ${FIXED_HOLDERS.length}`);
 
   let payerAta;
   try {
@@ -102,21 +66,26 @@ async function run() {
   }
 
   console.log("[INFO] Initiating automatic verified reward distribution...");
-  for (const holder of snapshot) {
-    if (holder.reward === 0n) continue;
+  for (const entry of FIXED_HOLDERS) {
+    const holderOwner = new PublicKey(entry.owner);
+    const holderReward = BigInt(entry.reward);
+
+    if (holderReward === 0n) continue;
     try {
-      const holderAta = await getAssociatedTokenAddress(tokenMint, holder.owner);
+      const holderAta = await getAssociatedTokenAddress(tokenMint, holderOwner);
       const transaction = new Transaction();
       
+      // Lisame tugeva prioriteetsustasu, et tehingud võrgust välja ei kukkuks
       transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
+      // Kontrollime, kas saajal on märgikonto olemas, vajadusel loome selle
       const info = await connection.getAccountInfo(holderAta);
       if (info === null) {
         transaction.add(
           createAssociatedTokenAccountInstruction(
             payer.publicKey,
             holderAta,
-            holder.owner,
+            holderOwner,
             tokenMint
           )
         );
@@ -128,7 +97,7 @@ async function run() {
           tokenMint,
           holderAta,
           payer.publicKey,
-          holder.reward,
+          holderReward,
           9
         )
       );
@@ -142,16 +111,17 @@ async function run() {
         commitment: 'confirmed' 
       });
       
+      // Ootame ära võrgu kinnituse enne järgmise juurde liikumist
       await connection.confirmTransaction({
         signature: txid,
         blockhash: blockhash,
         lastValidBlockHeight: lastValidBlockHeight
       }, 'confirmed');
 
-      console.log(`[REAL SUCCESS] Delivered 3% to ${holder.owner.toBase58()}. Tx: ${txid}`);
+      console.log(`[REAL SUCCESS] Delivered reward to ${holderOwner.toBase58()}. Tx: ${txid}`);
       await sleep(1000);
     } catch (txErr) {
-      console.error(`[FAILED] Target ${holder.owner.toBase58()} failed! Reason: ${txErr.message}`);
+      console.error(`[FAILED] Target ${holderOwner.toBase58()} failed! Reason: ${txErr.message}`);
       await sleep(1000);
     }
   }
@@ -160,5 +130,6 @@ async function run() {
 }
 
 run();
-       
+
+        
       
