@@ -1,4 +1,4 @@
- const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -58,7 +58,11 @@ async function requestCustom(method, params) {
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // PARANDUS: Lisame kohustusliku User-Agent päise, et serverid päringut ei blokeeriks
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
         body: JSON.stringify({ jsonrpc: '2.0', id: 'payout-task', method, params }),
         signal: AbortSignal.timeout(8000)
       });
@@ -139,4 +143,5 @@ async function run() {
 }
 
 run();
+
       
