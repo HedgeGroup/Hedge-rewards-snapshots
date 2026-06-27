@@ -15,6 +15,13 @@ const FIXED_HOLDERS = [
   { owner: "FtHhkad3SAW3pyLgLG522urGGQnJDw4Ydtgr2ta9Ep5j", reward: "5000000000" }
 ];
 
+const RPC_ENDPOINTS = [
+  "https://helius-rpc.com",
+  "https://ankr.com",
+  "https://allthingstoken.com",
+  "https://solana.com"
+];
+
 if (!PAYER_SECRET_KEY) {
   console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY!");
   process.exit(1);
@@ -50,52 +57,22 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function getAccountInfoCustom(accountPublicKey) {
-  const response = await fetch("https://helius-rpc.com", {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 'get-info',
-      method: 'getAccountInfo',
-      params: [accountPublicKey.toBase58(), { encoding: 'base64', commitment: 'confirmed' }]
-    })
-  });
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result ? json.result.value : null;
-}
-
-async function getLatestBlockhashCustom() {
-  const response = await fetch("https://helius-rpc.com", {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 'get-hash',
-      method: 'getLatestBlockhash',
-      params: [{ commitment: 'confirmed' }]
-    })
-  });
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result.value;
-}
-
-async function sendTransactionCustom(base64Tx) {
-  const response = await fetch("https://helius-rpc.com", {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 'send-tx',
-      method: 'sendTransaction',
-      params: [base64Tx, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed' }]
-    })
-  });
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result;
+async function requestCustom(method, params) {
+  for (let rpcUrl of RPC_ENDPOINTS) {
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'payout-task', method, params }),
+        timeout: 8000
+      });
+      const json = await response.json();
+      if (json.result !== undefined) return json.result;
+    } catch (err) {
+      continue;
+    }
+  }
+  throw new Error("All RPC servers failed or rate-limited.");
 }
 
 async function run() {
@@ -122,8 +99,8 @@ async function run() {
       
       transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
-      const info = await getAccountInfoCustom(holderAta);
-      if (info === null) {
+      const info = await requestCustom('getAccountInfo', [holderAta.toBase58(), { encoding: 'base64', commitment: 'confirmed' }]);
+      if (!info || info.value === null) {
         transaction.add(
           createAssociatedTokenAccountInstruction(
             payer.publicKey,
@@ -145,14 +122,14 @@ async function run() {
         )
       );
       
-      const blockhashData = await getLatestBlockhashCustom();
-      transaction.recentBlockhash = blockhashData.blockhash;
+      const blockhashData = await requestCustom('getLatestBlockhash', [{ commitment: 'confirmed' }]);
+      transaction.recentBlockhash = blockhashData.value.blockhash;
       transaction.feePayer = payer.publicKey;
       
       transaction.sign(payer);
       const serializedTx = transaction.serialize().toString('base64');
       
-      const txid = await sendTransactionCustom(serializedTx);
+      const txid = await requestCustom('sendTransaction', [serializedTx, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed' }]);
 
       console.log(`[REAL SUCCESS] Delivered reward to ${holderOwner.toBase58()}. Tx: ${txid}`);
       await sleep(1500);
@@ -167,4 +144,4 @@ async function run() {
 
 run();
 
-          
+        
