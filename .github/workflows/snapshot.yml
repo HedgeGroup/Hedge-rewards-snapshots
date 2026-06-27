@@ -23,13 +23,10 @@ jobs:
           node-version: '24'
 
       - name: Install Solana and Seed Phrase Libraries
-        run: npm install @solana/web3.js @solana/spl-token dotenv bs58 bip39 ed25519-hd-key node-fetch@2
-
-      - name: Variables
-        run: |
-          echo "RPC_URL=${{ secrets.SOLANA_RPC_URL }}" >> .env
-          echo "PAYER_SECRET_KEY=${{ secrets.PAYER_SECRET_KEY }}" >> .env
-          echo "IS_TEST=${{ github.event.inputs.test_mode || 'false' }}" >> .env
+        run: npm install @solana/web3.js @solana/spl-token bs58 bip39 ed25519-hd-key
 
       - name: Run Reward System
+        # PARANDUS: Me suuname GitHub Secrets väärtuse otse siin käivitamise hetkel mällu sisse (env:)
+        env:
+          PAYER_SECRET_KEY: ${{ secrets.PAYER_SECRET_KEY }}
         run: NODE_OPTIONS="--no-addons" node snapshot.js
