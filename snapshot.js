@@ -5,12 +5,12 @@ const bip39 = require('bip39');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
 
+const fetch = require('node-fetch');
+
 const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
 
-// --- HOIDJATE JA SUMMADE NIMEKIRI ---
-// Lisa siia aadresse juurde, eraldades kirjed komadega.
 const FIXED_HOLDERS = [
   { owner: "CgqDnm3YLPUGBoDy3PGTzF7gEmpXNnaBFc4o83VMBaXd", reward: "1000000000" },
   { owner: "FtHhkad3SAW3pyLgLG522urGGQnJDw4Ydtgr2ta9Ep5j", reward: "5000000000" }
@@ -52,7 +52,10 @@ async function sleep(ms) {
 }
 
 async function run() {
-  const connection = new Connection(MAIN_RPC, 'confirmed');
+  const connection = new Connection(MAIN_RPC, {
+    commitment: 'confirmed',
+    fetch: fetch
+  });
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
   
   console.log(`[SUCCESS] Fixed snapshot loaded. Total targets to process: ${FIXED_HOLDERS.length}`);
@@ -75,10 +78,8 @@ async function run() {
       const holderAta = await getAssociatedTokenAddress(tokenMint, holderOwner);
       const transaction = new Transaction();
       
-      // Lisame tugeva prioriteetsustasu, et tehingud võrgust välja ei kukkuks
       transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
-      // Kontrollime, kas saajal on märgikonto olemas, vajadusel loome selle
       const info = await connection.getAccountInfo(holderAta);
       if (info === null) {
         transaction.add(
@@ -111,7 +112,6 @@ async function run() {
         commitment: 'confirmed' 
       });
       
-      // Ootame ära võrgu kinnituse enne järgmise juurde liikumist
       await connection.confirmTransaction({
         signature: txid,
         blockhash: blockhash,
@@ -130,6 +130,3 @@ async function run() {
 }
 
 run();
-
-        
-      
