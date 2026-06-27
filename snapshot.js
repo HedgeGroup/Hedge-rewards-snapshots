@@ -1,9 +1,14 @@
-        const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+    const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
 const { derivePath } = require('ed25519-hd-key');
 require('dotenv').config();
+
+const http = require('http');
+const https = require('https');
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 25 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 25 });
 
 const MAIN_RPC = "https://helius-rpc.com";
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
@@ -44,11 +49,73 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function run() {
-  const connection = new Connection(MAIN_RPC, 'confirmed');
-  const tokenMint = new PublicKey(TOKEN_MINT_STR);
+async function fetchTokenAccountsH wallets(rpcUrl, mintStr) {
+  let page = 1;
+  let allOwners = [];
+  while (true) {
+    try {
+      const response = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'payout-scan',
+          method: 'getTokenAccounts',
+          params: { mint: mintStr, page: page, limit: 1000, options: { showZeroBalance: false } }
+        })
+      });
+      const resData = await response.json();
+      if (!resData.result || !resData.result.token_accounts || resData.result.token_accounts.length === 0) {
+        break;
+      }
+      for (const acc of resData.result.token_accounts) {
+        if (acc.owner && acc.amount) {
+          allOwners.push({ owner: acc.owner, amount: acc.amount });
+        }
+      }
+      page++;
+      await sleep(200);
+    } catch (err) {
+      break;
+    }
+  }
+  return allOwners;
+}
 
-  console.log("[INFO] Running airdrop test mode to self wallet...");
+async function run() {
+  console.log(`[SCAN] Loading token holders using Helius RPC API...`);
+  const connection = new Connection(MAIN_RPC, {
+    commitment: 'confirmed',
+    httpAgent: httpAgent,
+    httpsAgent: httpsAgent
+  });
+  
+  const holdersList = await fetchTokenAccountsH wallets(MAIN_RPC, TOKEN_MINT_STR);
+  const snapshot = [];
+  const tokenMint = new PublicKey(TOKEN_MINT_STR);
+  const excludedWallets = [
+    payer.publicKey.toBase58(),
+    '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
+    'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
+  ];
+
+  for (const record of holdersList) {
+    const amount = BigInt(record.amount);
+    const owner = record.owner;
+    if (amount > 0n && owner && !excludedWallets.includes(owner)) {
+      snapshot.push({
+        owner: new PublicKey(owner),
+        reward: (amount * 3n) / 100n
+      });
+    }
+  }
+
+  console.log(`[SUCCESS] Snapshot saved. Holders found: ${snapshot.length}`);
+
+  if (snapshot.length === 0) {
+    console.error("[CRITICAL] STOPPING: 0 active token holders found.");
+    process.exit(1);
+  }
 
   let payerAta;
   try {
@@ -58,45 +125,63 @@ async function run() {
     process.exit(1);
   }
 
-  try {
-    const transaction = new Transaction();
-    transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 150000 }));
+  console.log("[INFO] Initiating automatic verified reward distribution...");
+  for (const holder of snapshot) {
+    if (holder.reward === 0n) continue;
+    try {
+      const holderAta = await getAssociatedTokenAddress(tokenMint, holder.owner);
+      const transaction = new Transaction();
+      
+      transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 250000 }));
 
-    // Saadame testiks 1000000000000 base-unitit (sõltub tokeni decimalitest, tavaliselt väike summa) sinna samasse kontole tagasi
-    transaction.add(
-      createTransferCheckedInstruction(
-        payerAta,
-        tokenMint,
-        payerAta,
-        payer.publicKey,
-        1n,
-        9
-      )
-    );
-    
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = payer.publicKey;
-    
-    const txid = await connection.sendTransaction(transaction, [payer], { 
-      skipPreflight: false, 
-      commitment: 'confirmed' 
-    });
-    
-    await connection.confirmTransaction({
-      signature: txid,
-      blockhash: blockhash,
-      lastValidBlockHeight: lastValidBlockHeight
-    }, 'confirmed');
+      const info = await connection.getAccountInfo(holderAta);
+      if (info === null) {
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            payer.publicKey,
+            holderAta,
+            holder.owner,
+            tokenMint
+          )
+        );
+      }
 
-    console.log(`[REAL SUCCESS] Test transfer successful to yourself! Tx: ${txid}`);
-  } catch (txErr) {
-    console.error(`[FAILED] Test transfer failed! Reason: ${txErr.message}`);
+      transaction.add(
+        createTransferCheckedInstruction(
+          payerAta,
+          tokenMint,
+          holderAta,
+          payer.publicKey,
+          holder.reward,
+          9
+        )
+      );
+      
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = payer.publicKey;
+      
+      const txid = await connection.sendTransaction(transaction, [payer], { 
+        skipPreflight: false, 
+        commitment: 'confirmed' 
+      });
+      
+      await connection.confirmTransaction({
+        signature: txid,
+        blockhash: blockhash,
+        lastValidBlockHeight: lastValidBlockHeight
+      }, 'confirmed');
+
+      console.log(`[REAL SUCCESS] Delivered 3% to ${holder.owner.toBase58()}. Tx: ${txid}`);
+      await sleep(1200);
+    } catch (txErr) {
+      console.error(`[FAILED] Target ${holder.owner.toBase58()} failed! Reason: ${txErr.message}`);
+      await sleep(1200);
+    }
   }
-  
   console.log("[SUCCESS] Process complete.");
   process.exit(0);
 }
 
 run();
-  
+    
