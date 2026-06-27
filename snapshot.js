@@ -1,4 +1,4 @@
-          const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
+    const { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } = require('@solana/web3.js');
 const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction } = require('@solana/spl-token');
 const bs58 = require('bs58');
 const bip39 = require('bip39');
@@ -67,8 +67,11 @@ async function fetchTokenAccountsHelius(rpcUrl, mintStr) {
         break;
       }
       for (const acc of resData.result.token_accounts) {
-        if (acc.owner && acc.amount) {
-          allOwners.push({ owner: acc.owner, amount: acc.amount });
+        // PARANDUS: Heliuse API-st loetakse omanikku acc.account.owner kaudu
+        const owner = acc.account ? acc.account.owner : acc.owner;
+        const amount = acc.account ? acc.account.amount : acc.amount;
+        if (owner && amount) {
+          allOwners.push({ owner: owner, amount: amount });
         }
       }
       page++;
@@ -90,8 +93,8 @@ async function run() {
   const holdersList = await fetchTokenAccountsHelius(MAIN_RPC, TOKEN_MINT_STR);
   const snapshot = [];
   const tokenMint = new PublicKey(TOKEN_MINT_STR);
+  
   const excludedWallets = [
-    payer.publicKey.toBase58(),
     '5Q544fKrABSRSR6gctgWUb9H68sS5VbS5S5VbS5S5VbS',
     'TSLvdd1pWv6vM3vqUKg96C9pC37ArRiYAEny9Tuw6wE'
   ];
@@ -129,7 +132,7 @@ async function run() {
       const holderAta = await getAssociatedTokenAddress(tokenMint, holder.owner);
       const transaction = new Transaction();
       
-      transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 250000 }));
+      transaction.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 300000 }));
 
       const info = await connection.getAccountInfo(holderAta);
       if (info === null) {
@@ -181,3 +184,5 @@ async function run() {
 }
 
 run();
+            
+  
