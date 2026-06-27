@@ -3,9 +3,6 @@ const { createTransferCheckedInstruction, getAssociatedTokenAddress, createAssoc
 const bs58 = require('bs58');
 const bip39 = require('bip39');
 const { derivePath } = require('ed25519-hd-key');
-require('dotenv').config();
-
-const fetch = require('node-fetch');
 
 const PAYER_SECRET_KEY = process.env.PAYER_SECRET_KEY ? process.env.PAYER_SECRET_KEY.trim() : null;
 const TOKEN_MINT_STR = '4TKoRYDzXfSSY3NkFafstKey2cJrQxdw27rGtoV5pump';
@@ -18,12 +15,11 @@ const FIXED_HOLDERS = [
 const RPC_ENDPOINTS = [
   "https://helius-rpc.com",
   "https://ankr.com",
-  "https://allthingstoken.com",
   "https://solana.com"
 ];
 
 if (!PAYER_SECRET_KEY) {
-  console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY!");
+  console.error("[CRITICAL ERROR] Missing PAYER_SECRET_KEY inside GitHub Secrets!");
   process.exit(1);
 }
 
@@ -64,7 +60,7 @@ async function requestCustom(method, params) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 'payout-task', method, params }),
-        timeout: 8000
+        signal: AbortSignal.timeout(8000)
       });
       const json = await response.json();
       if (json.result !== undefined) return json.result;
@@ -143,4 +139,4 @@ async function run() {
 }
 
 run();
-     
+      
